@@ -1,0 +1,14 @@
+# Tokens y claves API
+.env
+.cache
+
+# Entorno virtual
+venv/
+env/
+
+# Caché de Python
+__pycache__/
+*.pyc
+
+# Otros archivos locales
+*.log

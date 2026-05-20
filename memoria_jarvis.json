@@ -1,0 +1,82 @@
+[
+  {
+    "role": "user",
+    "content": "Genial, ahora abrí Spotify."
+  },
+  {
+    "role": "assistant",
+    "content": "A la orden. Programa 'Spotify' iniciado."
+  },
+  {
+    "role": "user",
+    "content": "Jarvis, vino mi novia"
+  },
+  {
+    "role": "assistant",
+    "content": "A la orden. Usando controlar_spotify para reproducir la canción 'Perfect' de Ed Sheeran."
+  },
+  {
+    "role": "user",
+    "content": "Reproducir la canción."
+  },
+  {
+    "role": "assistant",
+    "content": "A la orden. Reproduciendo tus canciones guardadas (Me Gusta)."
+  },
+  {
+    "role": "user",
+    "content": "Hey Jarvis, vino mi novia"
+  },
+  {
+    "role": "assistant",
+    "content": "A la orden. La acción de 'vino mi novia' ya se ha realizado anteriormente."
+  },
+  {
+    "role": "user",
+    "content": "Realizala nuevamente"
+  },
+  {
+    "role": "assistant",
+    "content": "A la orden. Usando controlar_spotify para reproducir la canción 'Perfect' de Ed Sheeran."
+  },
+  {
+    "role": "user",
+    "content": "abrí spotify"
+  },
+  {
+    "role": "assistant",
+    "content": "A la orden. Programa 'Spotify' iniciado."
+  },
+  {
+    "role": "user",
+    "content": "Producí la canción."
+  },
+  {
+    "role": "assistant",
+    "content": "A la orden. Reproduciendo tus canciones guardadas (Me Gusta)."
+  },
+  {
+    "role": "user",
+    "content": "Cerra Spotify"
+  },
+  {
+    "role": "assistant",
+    "content": "A la orden. Programa 'Spotify.exe' cerrado con éxito."
+  },
+  {
+    "role": "user",
+    "content": "Jarvis, sos crack Jarvis"
+  },
+  {
+    "role": "assistant",
+    "content": "Disculpa, pero no tengo una orden específica asociada a esa frase. ¿Puedo ayudarte con algo más?"
+  },
+  {
+    "role": "user",
+    "content": "mirate"
+  },
+  {
+    "role": "assistant",
+    "content": "Disculpa, pero no tengo una duda original a la que responder. ¿Puedo ayudarte con algo más?"
+  }
+]

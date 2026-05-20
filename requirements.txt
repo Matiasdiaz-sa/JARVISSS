@@ -1,0 +1,17 @@
+fastapi==0.111.0
+uvicorn==0.30.1
+pyaudio==0.2.14
+spotipy==2.24.0
+python-dotenv==1.0.1
+httpx==0.27.0
+openwakeword==0.6.0
+vosk==0.3.45
+edge-tts==6.1.12
+pygame-ce==2.5.0
+sounddevice==0.4.7
+openai==1.35.3
+numpy==1.26.4
+pycaw==2.0.2
+comtypes==1.4.9
+screen-brightness-control==0.23.0
+PyQt6==6.7.0
