@@ -39,18 +39,46 @@ except:
 
 def _reproducir_audio(archivo: str):
     """Reproduce un archivo de audio de forma síncrona sin sleeps innecesarios."""
+    import time
     # Crear archivo de bloqueo de voz
     try:
         with open(LOCK_FILE, "w") as f:
-            f.write("1")
+            f.write(str(time.time()))
     except:
         pass
 
     try:
-        from playsound import playsound
-        playsound(archivo)
+        import pygame
+        
+        # Inicializar mixer si no está inicializado
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+            
+        pygame.mixer.music.load(archivo)
+        pygame.mixer.music.play()
+        
+        STOP_FILE = os.path.join(tempfile.gettempdir(), "jarvis_stop.lock")
+        while pygame.mixer.music.get_busy():
+            if os.path.exists(STOP_FILE):
+                pygame.mixer.music.stop()
+                try:
+                    os.remove(STOP_FILE)
+                except:
+                    pass
+                print("[TTS] 🛑 Audio interrumpido por el usuario.")
+                break
+            time.sleep(0.05)
+            
+        # Liberar el archivo para poder borrarlo
+        pygame.mixer.music.unload()
+    except ImportError:
+        try:
+            from playsound import playsound
+            playsound(archivo)
+        except Exception as e:
+            print(f"[TTS] Error al reproducir audio: {e}")
     except Exception as e:
-        print(f"[TTS] Error al reproducir audio: {e}")
+        print(f"[TTS] Error al reproducir audio con pygame: {e}")
     finally:
         # Eliminar archivo de bloqueo de voz pase lo que pase
         try:

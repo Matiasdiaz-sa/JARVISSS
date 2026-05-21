@@ -48,7 +48,7 @@ class JarvisWidget(QWidget):
         # Variables de estado visual
         self.num_bars = 7
         self.target_heights = [10] * self.num_bars
-        self.current_heights = [10] * self.num_bars
+        self.current_heights = [0] * self.num_bars
         
         self.estado_actual = "esperando" # esperando, grabando, pensando, hablando
         self.energia_actual = 0.0
@@ -57,6 +57,11 @@ class JarvisWidget(QWidget):
         self.color_activo = QColor(255, 50, 50, 200) # Rojo (Escuchando)
         self.color_pensando = QColor(255, 200, 50, 200) # Naranja/Amarillo (Pensando)
         self.color_hablando = QColor(50, 150, 255, 255) # Azul (Hablando)
+        
+        self.current_render_color = QColor(self.color_base)
+        self.current_opacity = 0.0
+        self.target_opacity = 1.0
+        self.setWindowOpacity(0.0)
         
         # Timer para animación suave (60 FPS)
         self.anim_timer = QTimer(self)
@@ -189,10 +194,12 @@ class JarvisWidget(QWidget):
     def check_tts_lock(self):
         lock_file = motor_audio.LOCK_FILE
         if os.path.exists(lock_file):
+            if self.estado_actual != "hablando":
+                self.estado_anterior = self.estado_actual
             self.estado_actual = "hablando"
         else:
             if self.estado_actual == "hablando":
-                self.estado_actual = "esperando"
+                self.estado_actual = getattr(self, "estado_anterior", "esperando")
                 
     def update_animation(self):
         self.time_counter += 0.1
@@ -223,6 +230,39 @@ class JarvisWidget(QWidget):
             diff = self.target_heights[i] - self.current_heights[i]
             self.current_heights[i] += diff * 0.3 # Factor de suavidad
             
+        # Determinar color objetivo
+        target_color = self.color_base
+        if self.estado_actual == "grabando":
+            target_color = self.color_activo
+        elif self.estado_actual == "pensando":
+            target_color = self.color_pensando
+        elif self.estado_actual == "hablando":
+            target_color = self.color_hablando
+        elif self.estado_actual == "hibernando":
+            if self.energia_actual > 100:
+                target_color = QColor(200, 100, 100, 150)
+                
+        # Interpolar color
+        r = self.current_render_color.red() + (target_color.red() - self.current_render_color.red()) * 0.1
+        g = self.current_render_color.green() + (target_color.green() - self.current_render_color.green()) * 0.1
+        b = self.current_render_color.blue() + (target_color.blue() - self.current_render_color.blue()) * 0.1
+        a = self.current_render_color.alpha() + (target_color.alpha() - self.current_render_color.alpha()) * 0.1
+        self.current_render_color.setRgb(int(r), int(g), int(b), int(a))
+        
+        # Determinar opacidad de ventana
+        self.target_opacity = 0.0 if self.estado_actual == "hibernando" else 1.0
+        diff_op = self.target_opacity - self.current_opacity
+        self.current_opacity += diff_op * 0.1
+        
+        if abs(self.current_opacity - self.target_opacity) > 0.01:
+            self.setWindowOpacity(max(0.0, min(1.0, self.current_opacity)))
+            
+            # Si es casi invisible, hacerlo intocable (click-through)
+            if self.current_opacity < 0.1:
+                self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            else:
+                self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+            
         self.update() # Forzar repintado (llama a paintEvent)
         
         # Si está oculto, actualizar el icono del tray para mostrar la actividad
@@ -234,19 +274,6 @@ class JarvisWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Elegir color según el estado
-        current_color = self.color_base
-        if self.estado_actual == "grabando":
-            current_color = self.color_activo
-        elif self.estado_actual == "pensando":
-            current_color = self.color_pensando
-        elif self.estado_actual == "hablando":
-            current_color = self.color_hablando
-        elif self.estado_actual == "hibernando":
-            # Si hay algo de volumen, poner un rojizo tenue
-            if self.energia_actual > 100:
-                current_color = QColor(200, 100, 100, 150)
-                
         # Dibujar rectángulos redondeados
         bar_width = 15
         gap = 10
@@ -256,13 +283,18 @@ class JarvisWidget(QWidget):
         center_y = self.height() // 2
         
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(current_color))
         
         for i in range(self.num_bars):
             h = max(4, self.current_heights[i])
             x = start_x + (i * (bar_width + gap))
             y = center_y - (h / 2)
             
+            # Dibujar sombra (resplandor)
+            painter.setBrush(QBrush(QColor(self.current_render_color.red(), self.current_render_color.green(), self.current_render_color.blue(), 50)))
+            painter.drawRoundedRect(int(x - 2), int(y - 2), int(bar_width + 4), int(h + 4), 5, 5)
+            
+            # Dibujar barra principal
+            painter.setBrush(QBrush(self.current_render_color))
             painter.drawRoundedRect(int(x), int(y), bar_width, int(h), 5, 5)
 
         # ====== Ojos al Front ======
@@ -316,7 +348,7 @@ class JarvisWidget(QWidget):
             pupil_center = QPointF(eye_center.x() + dx, eye_center.y() + dy)
             
             # Dibujar pupila del color actual
-            painter.setBrush(QBrush(current_color))
+            painter.setBrush(QBrush(self.current_render_color))
             painter.drawEllipse(pupil_center, pupil_radius, pupil_radius)
 
         draw_eye(left_eye_center)

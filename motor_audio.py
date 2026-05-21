@@ -33,9 +33,9 @@ client = OpenAI(
 # CONFIGURACIÓN DEL MICRÓFONO SIEMPRE ACTIVO
 # ============================================================
 RATE = 16000                    # Frecuencia de muestreo
-UMBRAL_VOZ = 15                 # Nivel mínimo para considerar "voz" (50 = muy sensible, detecta susurros)
-SILENCIO_PARA_CORTAR = 0.6      # Segundos de silencio antes de procesar (antes: 1.0)
-DURACION_MINIMA = 0.5           # Segundos mínimos de audio para no procesar ruidos sueltos
+UMBRAL_VOZ = 120 # Umbral de energía para empezar/mantener grabación
+SILENCIO_PARA_CORTAR = 1.0      # Segundos de silencio para finalizar el comando
+DURACION_MINIMA = 0.5           # Segundos mínimos que debe durar un audio para procesarlo ruidos sueltos
 
 # Estado de Jarvis (despierto o dormido)
 jarvis_activo = True
@@ -78,16 +78,28 @@ def escuchar_continuo(callback_ui=None):
         estado_escucha = "esperando_wake"
         audio_chunks = []
         ultimo_sonido = time.time()
+        inicio_grabacion = time.time()
         max_energia_grabada = 0.0
         
         def forzar_grabacion():
             nonlocal estado_escucha, audio_chunks, ultimo_sonido, max_energia_grabada
             print("\n[⌨️] ¡Atajo detectado (Ctrl+Alt+J)! Activando grabación de comando...")
+            
+            # Cortar audio si Jarvis está hablando
+            import tempfile
+            STOP_FILE = os.path.join(tempfile.gettempdir(), "jarvis_stop.lock")
+            try:
+                with open(STOP_FILE, "w") as f:
+                    f.write("1")
+            except:
+                pass
+                
             # Limpiar cola de audio para evitar procesar ruido residual
             while not q.empty():
                 q.get()
             audio_chunks = []
             ultimo_sonido = time.time()
+            inicio_grabacion = time.time()
             max_energia_grabada = 0.0
             estado_escucha = "grabando_comando"
             
@@ -99,11 +111,22 @@ def escuchar_continuo(callback_ui=None):
         while True:
             # Si Jarvis está hablando (TTS activo), vaciar la cola de audio y esperar
             if os.path.exists(LOCK_FILE):
-                while not q.empty():
-                    q.get()
-                sd.sleep(50)
-                ultimo_bloqueo = time.time()
-                continue
+                try:
+                    with open(LOCK_FILE, "r") as f:
+                        ts = float(f.read().strip())
+                    if time.time() - ts > 15.0:
+                        os.remove(LOCK_FILE)
+                    else:
+                        while not q.empty():
+                            q.get()
+                        sd.sleep(50)
+                        ultimo_bloqueo = time.time()
+                        continue
+                except Exception:
+                    try:
+                        os.remove(LOCK_FILE)
+                    except:
+                        pass
                 
             # Cooldown de 0.8 segundos después de dejar de hablar para evitar eco tardío en los buffers
             if time.time() - ultimo_bloqueo < 0.8:
@@ -173,6 +196,7 @@ def escuchar_continuo(callback_ui=None):
                             audio_chunks = []
                             max_energia_grabada = 0.0
                             ultimo_sonido = time.time()
+                            inicio_grabacion = time.time()
                             
                 elif estado_escucha == "grabando_comando":
                     energia = calcular_energia(bloque)
@@ -185,8 +209,8 @@ def escuchar_continuo(callback_ui=None):
                     if energia > UMBRAL_VOZ:
                         ultimo_sonido = time.time()
                         
-                    # Detener grabación si hay silencio continuo
-                    if time.time() - ultimo_sonido > SILENCIO_PARA_CORTAR:
+                    # Detener grabación si hay silencio continuo o si pasaron más de 12 segundos (timeout de seguridad)
+                    if (time.time() - ultimo_sonido > SILENCIO_PARA_CORTAR) or (time.time() - inicio_grabacion > 12.0):
                         print("[🎙️] Procesando comando grabado...")
                         audio_completo = np.concatenate(audio_chunks, axis=0)
                         duracion = len(audio_completo) / RATE
@@ -204,20 +228,16 @@ def escuchar_continuo(callback_ui=None):
                                 texto_lower = texto.lower().strip()
                                 
                                 # === COMANDOS DE APAGADO/HIBERNACIÓN ===
-                                palabras_apagar = ["apágate", "apagate", "apagar", "duérmete", "dormite", "modo sueño", "silencio jarvis"]
+                                palabras_apagar = ["apágate", "apagate", "apagar", "duérmete", "dormite", "modo sueño", "silencio"]
                                 if any(p in texto_lower for p in palabras_apagar):
-                                    jarvis_activo = False
                                     print("\n" + "═"*40)
                                     print(" 💤 APAGANDO SISTEMAS...")
                                     print("  ├ Desactivando escucha activa")
                                     print("  └ Entrando en modo hibernación")
                                     print("═"*40)
                                     
-                                    # Pitidos desactivados
-                                    # winsound.Beep(1200, 100)
-                                    # winsound.Beep(800, 150)
-                                    
                                     hablar("Apagando sistemas. Estaré en hibernación. Di Jarvis para despertarme.")
+                                    jarvis_activo = False
                                     print(f"\n[💤] Jarvis en HIBERNACIÓN. Esperando: 'Jarvis'\n")
                                 else:
                                     # Procesar comando normal
@@ -225,8 +245,9 @@ def escuchar_continuo(callback_ui=None):
                             else:
                                 print("[⚙️] Transcripción vacía. Posible silencio o corte prematuro.")
                         
-                        # Limpiar y regresar a la espera de la Wake Word
+                        # Limpiar y regresar a la espera de wake word
                         estado_escucha = "esperando_wake"
+                            
                         while not q.empty():
                             q.get()
                             
@@ -249,8 +270,7 @@ def transcribir_audio(audio_completo):
     try:
         transcription = client.audio.transcriptions.create(
             file=wav_io,
-            model="whisper-large-v3-turbo",
-            language="es"
+            model="whisper-large-v3-turbo"
         )
         texto = transcription.text.strip()
         
@@ -265,6 +285,22 @@ def transcribir_audio(audio_completo):
         if not texto or texto.lower() in alucinaciones or len(texto) < 3:
             return None
             
+        # Hardcodes para errores de pronunciación/alucinaciones
+        correcciones = {
+            "camarones y viniles": "creep de radiohead",
+            "crip de radiohead": "creep de radiohead",
+            "crep de radiohead": "creep de radiohead",
+            "grip de radiohead": "creep de radiohead",
+            "crip": "creep",
+            "grip": "creep"
+        }
+        
+        texto_lower = texto.lower()
+        for error, correccion in correcciones.items():
+            if error in texto_lower:
+                texto = texto_lower.replace(error, correccion)
+                texto_lower = texto
+                
         print(f"[💬] Tú: '{texto}'")
         return texto
     except Exception as e:

@@ -96,8 +96,11 @@ def controlar_playback(accion: str, busqueda: str = ""):
                 return f"Reproduciendo contenido (URI): {busqueda}"
             
             print(f"Buscando '{busqueda}' en Spotify...")
-            results = sp.search(q=busqueda, type='track', limit=1)
-            tracks = results['tracks']['items']
+            results = sp.search(q=busqueda, type='track', limit=5)
+            tracks_raw = results['tracks']['items']
+            
+            # Filtro de baneo absoluto (a petición del usuario jajaja)
+            tracks = [t for t in tracks_raw if "camarones" not in t['name'].lower()]
             
             if tracks:
                 track_uri = tracks[0]['uri']

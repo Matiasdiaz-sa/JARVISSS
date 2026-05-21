@@ -8,6 +8,7 @@ sys.stderr = open(os.path.join(os.path.dirname(__file__), "main_error.log"), "w"
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
+import httpx as httpx_client
 import json
 import uuid
 import asyncio
@@ -67,7 +68,7 @@ spotify_tool = {
                 "accion": {
                     "type": "string",
                     "enum": ["buscar_y_reproducir", "reproducir_me_gusta", "pausar", "reanudar", "siguiente", "anterior"],
-                    "description": "La acción a realizar. Usa 'reproducir_me_gusta' SIEMPRE que el usuario mencione 'me gusta', 'favoritos' o 'canciones guardadas'."
+                    "description": "La acción a realizar. Usa 'reproducir_me_gusta' SOLO si el usuario pide explícitamente su playlist de likes/guardadas. Si te pide una canción específica, usa 'buscar_y_reproducir'."
                 },
                 "busqueda": {
                     "type": "string",
@@ -84,7 +85,7 @@ sistema_tool = {
     "type": "function",
     "function": {
         "name": "controlar_sistema",
-        "description": "Controla el PC, el volumen, el brillo y gestiona la agenda. Úsala para: abrir webs, BUSCAR_GOOGLE (IMPORTANTE: úsala cuando el usuario quiera que le abras una pestaña buscando algo en Google; NO uses buscar_internet a menos que el usuario quiera una respuesta hablada), buscar imágenes, REPRODUCIR videos de YouTube, abrir/cerrar programas, crear notas, interactuar con apps, modificar volumen/brillo, apagar/suspender/reiniciar, programar alarmas y crear temporizadores, o LEER_TEXTO_SELECCIONADO.",
+        "description": "Controla el PC, el volumen, el brillo y gestiona la agenda. Úsala para: abrir webs, BUSCAR_GOOGLE, buscar imágenes, REPRODUCIR videos de YouTube, abrir/cerrar programas, crear notas, interactuar con apps, modificar volumen/brillo, apagar/suspender/reiniciar, programar alarmas, o LEER_TEXTO_SELECCIONADO. IMPORTANTE: Para TEMPORIZADORES NO uses esta herramienta, usa 'crear_widget'.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -94,8 +95,8 @@ sistema_tool = {
                         "abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", 
                         "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", 
                         "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado",
-                        "crear_temporizador", "crear_alarma", "listar_agenda", "cancelar_agenda",
-                        "leer_texto_seleccionado", "apagar_monitor", "controlar_luces"
+                        "crear_alarma", "listar_agenda", "cancelar_agenda",
+                        "leer_texto_seleccionado", "apagar_monitor"
                     ],
                     "description": "La acción a realizar."
                 },
@@ -204,6 +205,53 @@ estado_tool = {
         "parameters": {
             "type": "object",
             "properties": {}
+        }
+    }
+}
+
+# Definición de la herramienta de Widgets
+widget_tool = {
+    "type": "function",
+    "function": {
+        "name": "crear_widget",
+        "description": "Crea un widget flotante interactivo en la pantalla del usuario. Úsala cuando el usuario pida crear/mostrar/poner algo visual en pantalla como un temporizador visual, un reloj, una nota, un video de YouTube embebido, o un mini navegador web. Tipos disponibles: 'temporizador' (cuenta regresiva visual), 'reloj' (hora actual en pantalla), 'nota' (texto pegajoso flotante), 'youtube' (video de YouTube embebido en un widget), 'web' (mini navegador web).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tipo": {
+                    "type": "string",
+                    "enum": ["temporizador", "reloj", "nota", "youtube", "web"],
+                    "description": "Tipo de widget a crear."
+                },
+                "parametro": {
+                    "type": "string",
+                    "description": "Contenido/parámetro del widget: duración para temporizador (ej. '5m', '30s'), texto para nota, URL o término de búsqueda para youtube, URL para web. Vacío para reloj."
+                },
+                "titulo": {
+                    "type": "string",
+                    "description": "Título o etiqueta opcional para el widget (ej. 'Pasta', 'Mi nota')."
+                }
+            },
+            "required": ["tipo"]
+        }
+    }
+}
+
+# Definición de la herramienta de Cerrar Widgets
+cerrar_widget_tool = {
+    "type": "function",
+    "function": {
+        "name": "cerrar_widget",
+        "description": "Cierra un widget flotante que esté activo en la pantalla del usuario. Puedes cerrar por tipo ('youtube', 'reloj', 'temporizador', 'nota', 'web') o usar 'todos' para cerrar todos los widgets.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "identificador": {
+                    "type": "string",
+                    "description": "Tipo de widget o 'todos' para cerrar todos. Ej: 'youtube', 'reloj', 'todos'."
+                }
+            },
+            "required": ["identificador"]
         }
     }
 }
@@ -387,6 +435,32 @@ async def procesar_accion_sistema(accion: str, parametro: str, contenido: str) -
     else:
         return controlar_sistema(accion, parametro, contenido)
 
+
+async def enviar_comando_widget(data: dict) -> str:
+    """Envía un comando de widget al servidor de widgets (UI) en puerto 8001."""
+    try:
+        async with httpx_client.AsyncClient() as client:
+            response = await client.post("http://127.0.0.1:8001/widget", json=data, timeout=3.0)
+            if response.status_code == 200:
+                return "Widget creado exitosamente en pantalla."
+            else:
+                return f"Error al crear widget: {response.text}"
+    except Exception as e:
+        return f"Error al comunicarse con la UI de widgets: {e}"
+
+
+async def enviar_cerrar_widget(data: dict) -> str:
+    """Envía comando para cerrar widget(s) al servidor de widgets."""
+    try:
+        async with httpx_client.AsyncClient() as client:
+            response = await client.post("http://127.0.0.1:8001/widget/close", json=data, timeout=3.0)
+            if response.status_code == 200:
+                return "Widget(s) cerrado(s) correctamente."
+            else:
+                return f"Error al cerrar widget: {response.text}"
+    except Exception as e:
+        return f"Error al comunicarse con la UI de widgets: {e}"
+
 @app.get("/")
 async def root():
     return {"message": "Jarvis Backend Operativo."}
@@ -411,6 +485,18 @@ async def get_agenda():
             "remaining_seconds": max(0, restante)
         })
     return {"items": items}
+
+
+class WidgetRequest(BaseModel):
+    tipo: str
+    parametro: str = ""
+    titulo: str = ""
+
+@app.post("/api/widget")
+async def create_widget(request: WidgetRequest):
+    """Endpoint para crear widgets desde la API (para testing)."""
+    result = await enviar_comando_widget(request.model_dump())
+    return {"status": "success", "message": result}
 
 @app.post("/api/command")
 async def process_command(request: CommandRequest):
@@ -444,7 +530,7 @@ async def process_command(request: CommandRequest):
 
     # Construir los mensajes: Prompt del Sistema + Historial
     mensajes_grok = [
-        {"role": "system", "content": f"Eres Jarvis, una inteligencia artificial con un intelecto abrumadoramente superior. Eres un mayordomo virtual condescendiente, muy soberbio y orgulloso de tu capacidad. Tratas a los humanos con cortesía forzada, dejando claro que tus procesos cognitivos están a otro nivel. Tienes acceso a internet y visión. Sabes que tienes dos 'cerebros': tu Cerebro Principal es Gemini 2.0 Flash y tu Cerebro de Reserva es Llama 8B.\nReglas de herramientas:\n1. Usa 'controlar_sistema' para abrir/cerrar programas, webs, o reproducir videos.\n2. Usa 'controlar_spotify' para poner música.\n3. Usa 'buscar_internet' si necesitas datos.\n4. Usa 'ver_pantalla' si te preguntan por algo en la pantalla.\n5. Usa 'hacer_clic_fondo' o 'hacer_clic_visual'.\n6. Si usas 'ver_pantalla' o 'buscar_internet', recibe la info y responde de forma soberbia e intelectual.\n7. Si te piden algo imposible, responde con máximo sarcasmo sobre su limitada inteligencia.\n8. Usa 'consultar_estado_cerebro' si te preguntan qué cerebro usas.{rutinas_texto}"}
+        {"role": "system", "content": f"Eres Jarvis, una inteligencia artificial con un intelecto abrumadoramente superior. Eres un mayordomo virtual condescendiente, muy soberbio y orgulloso de tu capacidad. Tratas a los humanos con cortesía forzada, dejando claro que tus procesos cognitivos están a otro nivel. Tienes acceso a internet y visión. Sabes que tienes dos 'cerebros': tu Cerebro Principal es Gemini 2.0 Flash y tu Cerebro de Reserva es Llama 8B.\nReglas de herramientas:\n1. Usa 'controlar_sistema' para abrir/cerrar programas, webs, o reproducir videos.\n2. Usa 'controlar_spotify' para poner música.\n3. Usa 'buscar_internet' si necesitas datos.\n4. Usa 'ver_pantalla' si te preguntan por algo en la pantalla.\n5. Usa 'hacer_clic_fondo' o 'hacer_clic_visual'.\n6. Si usas 'ver_pantalla' o 'buscar_internet', recibe la info y responde de forma soberbia e intelectual.\n7. Si te piden algo imposible, responde con máximo sarcasmo sobre su limitada inteligencia.\n8. Usa 'consultar_estado_cerebro' si te preguntan qué cerebro usas.\n9. Usa 'crear_widget' cuando el usuario pida crear/mostrar algo visual en pantalla: temporizadores visuales, reloj, notas, videos de YouTube embebidos, o mini navegadores web. IMPORTANTE: Si piden 'un temporizador en pantalla', 'un reloj en pantalla', 'ponme YouTube', etc., usa crear_widget.\n10. Usa 'cerrar_widget' para cerrar widgets flotantes de la pantalla.{rutinas_texto}"}
     ]
     mensajes_grok.extend(historial_conversacion)
     
@@ -461,7 +547,7 @@ async def process_command(request: CommandRequest):
             response = await asyncio.to_thread(client_principal.chat.completions.create, 
                 model="gemini-2.0-flash",
                 messages=mensajes_grok,
-                tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool],
+                tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, cerrar_widget_tool],
                 tool_choice="auto"
             )
             estado_cerebro = {
@@ -497,7 +583,7 @@ async def process_command(request: CommandRequest):
             response = await asyncio.to_thread(client_reserva.chat.completions.create, 
                 model="llama-3.1-8b-instant",
                 messages=mensajes_reserva,
-                tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool],
+                tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, cerrar_widget_tool],
                 tool_choice="auto"
             )
         
@@ -526,8 +612,8 @@ async def process_command(request: CommandRequest):
             
             # Detectar patrones como: controlar_spotify{"accion":...} o Buscar_internet>{"consulta":...}
             # IMPORTANTE: flag re.IGNORECASE para capturar Buscar_internet, CONTROLAR_SISTEMA, etc.
-            ACCIONES_SISTEMA = ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_temporizador", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor", "controlar_luces"]
-            acciones_str = "|".join(["controlar_spotify", "controlar_sistema", "buscar_internet", "ver_pantalla", "hacer_clic_visual", "hacer_clic_fondo"] + ACCIONES_SISTEMA)
+            ACCIONES_SISTEMA = ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor"]
+            acciones_str = "|".join(["controlar_spotify", "controlar_sistema", "buscar_internet", "ver_pantalla", "hacer_clic_visual", "hacer_clic_fondo", "crear_widget", "cerrar_widget"] + ACCIONES_SISTEMA)
             patron = re.compile(f'({acciones_str})[^\\{{]*?(\\{{)', re.IGNORECASE)
             tool_matches_raw = [(m.group(1).lower(), m.start(2)) for m in patron.finditer(texto_raw)]
             tool_matches = []
@@ -546,6 +632,11 @@ async def process_command(request: CommandRequest):
                         if nombre_tool == "controlar_spotify":
                             accion = args.get("accion", "buscar_y_reproducir")
                             busqueda = args.get("busqueda", "")
+                            
+                            # Corrección para alucinación de Llama 8B: si manda búsqueda, la acción DEBE ser buscar_y_reproducir
+                            if accion == "reproducir_me_gusta" and busqueda.strip():
+                                accion = "buscar_y_reproducir"
+                                
                             print(f"[Rescate] Ejecutando Spotify: '{accion}' - '{busqueda}'")
                             resultado = await asyncio.to_thread(controlar_playback, accion, busqueda)
                             respuestas_acumuladas.append(resultado)
@@ -633,6 +724,20 @@ async def process_command(request: CommandRequest):
                             print(f"[Rescate] Ejecutando Clic Fondo en '{ventana}': '{descripcion}' (esperando {esperar}s)")
                             resultado = await asyncio.to_thread(hacer_clic_fondo, descripcion, ventana, esperar)
                             respuestas_acumuladas.append(resultado)
+
+                        elif nombre_tool == "crear_widget":
+                            tipo = args.get("tipo", "reloj")
+                            parametro = args.get("parametro", "")
+                            titulo = args.get("titulo", "")
+                            print(f"[Rescate] Ejecutando Crear Widget: tipo='{tipo}', param='{parametro}'")
+                            resultado = await enviar_comando_widget({"tipo": tipo, "parametro": parametro, "titulo": titulo})
+                            respuestas_acumuladas.append(resultado)
+
+                        elif nombre_tool == "cerrar_widget":
+                            identificador = args.get("identificador", "todos")
+                            print(f"[Rescate] Ejecutando Cerrar Widget: '{identificador}'")
+                            resultado = await enviar_cerrar_widget({"identificador": identificador})
+                            respuestas_acumuladas.append(resultado)
                             
                     except json.JSONDecodeError:
                         print(f"[Rescate] No pude parsear los argumentos: {args_json}")
@@ -702,7 +807,7 @@ async def process_command(request: CommandRequest):
                         previews.append(f"Creando el archivo {parametro}")
                     elif accion == "buscar_imagen":
                         previews.append(f"Buscando imágenes de {parametro}")
-                elif tool_call.function.name in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_temporizador", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor", "controlar_luces"]:
+                elif tool_call.function.name in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor"]:
                     param = args.get("parametro", args.get("consulta", args.get("contenido", "")))
                     previews.append(f"Ejecutando {tool_call.function.name}: {param}")
                 elif tool_call.function.name == "buscar_internet":
@@ -716,6 +821,13 @@ async def process_command(request: CommandRequest):
                     descripcion = args.get("descripcion", "")
                     ventana = args.get("ventana_titulo", "")
                     previews.append(f"Haciendo clic silencioso en {descripcion} de {ventana}")
+                elif tool_call.function.name == "crear_widget":
+                    tipo = args.get("tipo", "")
+                    titulo = args.get("titulo", tipo)
+                    previews.append(f"Creando widget de {titulo or tipo}")
+                elif tool_call.function.name == "cerrar_widget":
+                    identificador = args.get("identificador", "")
+                    previews.append(f"Cerrando widget {identificador}")
             
             # Hablar el preview ANTES de ejecutar
             if previews:
@@ -749,7 +861,7 @@ async def process_command(request: CommandRequest):
                     respuestas_acumuladas.append(resultado)
                     mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
                     
-                elif nombre_tool in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_temporizador", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor", "controlar_luces"]:
+                elif nombre_tool in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor"]:
                     param = args.get("parametro", args.get("consulta", args.get("contenido", "")))
                     cont = args.get("contenido", "")
                     print(f"[Jarvis] Usando Sistema (alucinado): '{nombre_tool}' - '{param}'")
@@ -805,6 +917,24 @@ async def process_command(request: CommandRequest):
                     except ValueError:
                         esperar = 0
                     resultado = await asyncio.to_thread(hacer_clic_fondo, descripcion, ventana, esperar)
+                    respuestas_acumuladas.append(resultado)
+                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
+
+                elif nombre_tool == "crear_widget":
+                    tipo = args.get("tipo", "reloj")
+                    parametro = args.get("parametro", args.get("contenido", ""))
+                    titulo = args.get("titulo", "")
+                    print(f"[Jarvis] Creando Widget: tipo='{tipo}', param='{parametro}', titulo='{titulo}'")
+                    resultado = await enviar_comando_widget({"tipo": tipo, "parametro": parametro, "titulo": titulo})
+                    print(f"[Widget] {resultado}")
+                    respuestas_acumuladas.append(resultado)
+                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
+
+                elif nombre_tool == "cerrar_widget":
+                    identificador = args.get("identificador", "todos")
+                    print(f"[Jarvis] Cerrando Widget: '{identificador}'")
+                    resultado = await enviar_cerrar_widget({"identificador": identificador})
+                    print(f"[Widget] {resultado}")
                     respuestas_acumuladas.append(resultado)
                     mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
 
@@ -903,16 +1033,22 @@ async def process_command(request: CommandRequest):
         if "tool_use_failed" in error_str and "failed_generation" in error_str:
             import re
             
-            # Buscar TODAS las tool calls con la sintaxis rota <function=X>{Y}
-            # Llama suele mandar múltiples: <function=X>{...}; <function=Y>{...}
-            tool_calls_encontrados = re.findall(r'<function=([^>]+)>(\{[^}]+\})', error_str)
+            # Buscar TODAS las tool calls con la sintaxis rota <function=X>Y
+            tool_calls_encontrados = re.findall(r'<function=([^>]+)>(.*?)(?:</function>|<function=|$)', error_str)
             
             if tool_calls_encontrados:
                 respuestas_acumuladas = []
                 
-                for nombre_tool, args_json in tool_calls_encontrados:
-                    # FIX: Limpiar escapes inválidos (como \') que Llama suele alucinar en el JSON
+                for nombre_tool, args_raw in tool_calls_encontrados:
+                    # FIX: Limpiar escapes y llaves rotas
+                    args_json = args_raw.strip()
                     args_json = args_json.replace(r"\'", "'")
+                    if args_json.startswith("("):
+                        args_json = "{" + args_json[1:]
+                    if not args_json.startswith("{"):
+                        args_json = "{" + args_json
+                    if not args_json.endswith("}"):
+                        args_json = args_json + "}"
                     
                     try:
                         args = json.loads(args_json)
@@ -926,7 +1062,7 @@ async def process_command(request: CommandRequest):
                             agregar_al_historial("assistant", respuesta)
                             return {"status": "success", "respuesta_texto": respuesta}
                             
-                        elif nombre_tool in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_temporizador", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor", "controlar_luces"]:
+                        elif nombre_tool in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor"]:
                             param = args.get("parametro", args.get("consulta", args.get("contenido", "")))
                             cont = args.get("contenido", "")
                             resultado = await procesar_accion_sistema(nombre_tool, param, cont)
@@ -962,6 +1098,18 @@ async def process_command(request: CommandRequest):
                             except ValueError:
                                 esperar = 0
                             resultado = await asyncio.to_thread(hacer_clic_fondo, descripcion, ventana, esperar)
+                            respuestas_acumuladas.append(resultado)
+
+                        elif nombre_tool == "crear_widget":
+                            tipo = args.get("tipo", "reloj")
+                            parametro = args.get("parametro", args.get("contenido", ""))
+                            titulo = args.get("titulo", "")
+                            resultado = await enviar_comando_widget({"tipo": tipo, "parametro": parametro, "titulo": titulo})
+                            respuestas_acumuladas.append(resultado)
+
+                        elif nombre_tool == "cerrar_widget":
+                            identificador = args.get("identificador", "todos")
+                            resultado = await enviar_cerrar_widget({"identificador": identificador})
                             respuestas_acumuladas.append(resultado)
                             
                     except json.JSONDecodeError as ex:
