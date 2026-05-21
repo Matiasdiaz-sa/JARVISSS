@@ -1,4 +1,4 @@
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 
 def buscar_internet(consulta: str):
     """Busca en internet usando DuckDuckGo y devuelve un resumen de los primeros resultados."""

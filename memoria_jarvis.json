@@ -1,23 +1,15 @@
 [
   {
     "role": "user",
-    "content": "Genial, ahora abrí Spotify."
+    "content": "¿Qué canción se está reproduciendo en Spotify?"
   },
   {
     "role": "assistant",
-    "content": "A la orden. Programa 'Spotify' iniciado."
+    "content": "A la orden. En Spotify, se está reproduciendo 'Camarones y Viniles' de Rawayana."
   },
   {
     "role": "user",
-    "content": "Jarvis, vino mi novia"
-  },
-  {
-    "role": "assistant",
-    "content": "A la orden. Usando controlar_spotify para reproducir la canción 'Perfect' de Ed Sheeran."
-  },
-  {
-    "role": "user",
-    "content": "Reproducir la canción."
+    "content": "Reproducí Crip de Radiohead"
   },
   {
     "role": "assistant",
@@ -25,58 +17,66 @@
   },
   {
     "role": "user",
-    "content": "Hey Jarvis, vino mi novia"
+    "content": "temporizador de 10 segundos"
   },
   {
     "role": "assistant",
-    "content": "A la orden. La acción de 'vino mi novia' ya se ha realizado anteriormente."
+    "content": "A la orden. Duración: 10 segundos. Etiqueta: 'Temporizador'. ID: 0f5e44. Contador iniciado."
   },
   {
     "role": "user",
-    "content": "Realizala nuevamente"
+    "content": "Crea un temporizador arriba de la derecha."
   },
   {
     "role": "assistant",
-    "content": "A la orden. Usando controlar_spotify para reproducir la canción 'Perfect' de Ed Sheeran."
+    "content": "A la orden. Se ha creado un temporizador de 10 segundos arriba a la derecha. Etiqueta: 'Temporizador'. ID: 0f5e44."
   },
   {
     "role": "user",
-    "content": "abrí spotify"
+    "content": "Abrir Spotify."
   },
   {
     "role": "assistant",
-    "content": "A la orden. Programa 'Spotify' iniciado."
+    "content": "A la orden. Abriendo la página principal de YouTube."
   },
   {
     "role": "user",
-    "content": "Producí la canción."
+    "content": "Poné cumbia villera en Spotify"
   },
   {
     "role": "assistant",
-    "content": "A la orden. Reproduciendo tus canciones guardadas (Me Gusta)."
+    "content": "A la orden. Reproduciendo 'Una Calle Nos Separa' de Nestor En Bloque."
   },
   {
     "role": "user",
-    "content": "Cerra Spotify"
+    "content": "Pausa, pausa"
   },
   {
     "role": "assistant",
-    "content": "A la orden. Programa 'Spotify.exe' cerrado con éxito."
+    "content": "A la orden. Excepción al intentar controlar Spotify: http status: 403, code: -1 - https://api.spotify.com/v1/me/player/play?device_id=39a42961c0489493209db40bf0a8a509181bfd41:\n Player command failed: Restriction violated, reason: UNKNOWN"
   },
   {
     "role": "user",
-    "content": "Jarvis, sos crack Jarvis"
+    "content": "Pausa la música"
   },
   {
     "role": "assistant",
-    "content": "Disculpa, pero no tengo una orden específica asociada a esa frase. ¿Puedo ayudarte con algo más?"
+    "content": "A la orden. Reproducción de Spotify pausada."
   },
   {
     "role": "user",
-    "content": "mirate"
+    "content": "Pone al máximo el volumen."
   },
   {
     "role": "assistant",
-    "content": "Disculpa, pero no tengo una duda original a la que responder. ¿Puedo ayudarte con algo más?"
+    "content": "A la orden. Modificando el volumen a 'maximo'."
+  },
+  {
+    "role": "user",
+    "content": "Pone el volumen al 70%."
+  },
+  {
+    "role": "assistant",
+    "content": "A la orden. Volumen configurado al 70%."
   }
 ]

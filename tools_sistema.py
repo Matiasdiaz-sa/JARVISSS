@@ -464,6 +464,50 @@ def controlar_sistema(accion: str, parametro: str = "", contenido: str = ""):
             os.system("shutdown /a")
             return "Apagado/reinicio programado cancelado con éxito."
             
+        elif accion == "apagar_monitor":
+            print("[Sistema] Apagando monitores...")
+            import ctypes
+            # 0x0112 is WM_SYSCOMMAND, 0xF170 is SC_MONITORPOWER, 2 is OFF
+            ctypes.windll.user32.SendMessageW(0xFFFF, 0x0112, 0xF170, 2)
+            return "El monitor ha sido apagado. Mueva el ratón para encenderlo."
+            
+        elif accion == "controlar_luces":
+            print(f"[Sistema] Configurando luces RGB a: {parametro}")
+            try:
+                from openrgb import OpenRGBClient
+                from openrgb.utils import RGBColor
+                
+                client = OpenRGBClient()
+                
+                # Mapeo de colores básicos
+                colores = {
+                    "rojo": RGBColor(255, 0, 0),
+                    "azul": RGBColor(0, 0, 255),
+                    "verde": RGBColor(0, 255, 0),
+                    "blanco": RGBColor(255, 255, 255),
+                    "apagado": RGBColor(0, 0, 0),
+                    "amarillo": RGBColor(255, 255, 0),
+                    "naranja": RGBColor(255, 128, 0),
+                    "morado": RGBColor(128, 0, 128),
+                    "rosa": RGBColor(255, 0, 255),
+                    "celeste": RGBColor(0, 255, 255)
+                }
+                
+                color_rgb = colores.get(parametro.lower(), RGBColor(255, 255, 255))
+                
+                # Si el usuario dice "apagar", lo forzamos al color negro/apagado
+                if "apagad" in parametro.lower() or "off" in parametro.lower():
+                    color_rgb = RGBColor(0, 0, 0)
+                
+                for device in client.devices:
+                    device.set_color(color_rgb)
+                    
+                return f"Luces ajustadas al color {parametro} correctamente."
+            except Exception as e:
+                print(f"[Error RGB] {e}")
+                return "No se pudo controlar las luces. Asegúrese de que el software OpenRGB esté descargado y el SDK Server esté iniciado."
+            
+            
         else:
             return f"Acción de sistema desconocida: {accion}"
 

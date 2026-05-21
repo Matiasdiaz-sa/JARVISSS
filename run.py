@@ -19,14 +19,16 @@ def iniciar_todo():
 
     print("[1/2] Levantando el servidor de IA (Grok) y herramientas...")
     # Iniciamos main.py en un proceso hijo
-    cerebro = subprocess.Popen([python_exe, "main.py"])
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    cerebro = subprocess.Popen([python_exe, "main.py"], env=env)
     
     # Le damos 3 segundos al servidor para que arranque y esté listo para recibir peticiones
     time.sleep(3)
     
     print("\n[2/2] Conectando el micrófono y levantando el Widget Visual (HUD)...")
     # Iniciamos ui_jarvis.py en otro proceso hijo (que a su vez arranca el motor de audio interno)
-    oidos = subprocess.Popen([python_exe, "ui_jarvis.py"])
+    oidos = subprocess.Popen([python_exe, "ui_jarvis.py"], env=env)
     
     try:
         # Mantenemos este script vivo mientras el motor de audio funcione

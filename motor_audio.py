@@ -33,7 +33,7 @@ client = OpenAI(
 # CONFIGURACIÓN DEL MICRÓFONO SIEMPRE ACTIVO
 # ============================================================
 RATE = 16000                    # Frecuencia de muestreo
-UMBRAL_VOZ = 150                # Nivel de volumen mínimo para considerar "voz" (antes: 500)
+UMBRAL_VOZ = 15                 # Nivel mínimo para considerar "voz" (50 = muy sensible, detecta susurros)
 SILENCIO_PARA_CORTAR = 0.6      # Segundos de silencio antes de procesar (antes: 1.0)
 DURACION_MINIMA = 0.5           # Segundos mínimos de audio para no procesar ruidos sueltos
 
@@ -62,7 +62,7 @@ def escuchar_continuo(callback_ui=None):
     import os
     
     print("[Reconocimiento] Cargando modelo predeterminado 'hey_jarvis'...")
-    oww_model = Model(wakeword_models=["hey_jarvis"], vad_threshold=0.5)
+    oww_model = Model(wakeword_models=["hey_jarvis"], vad_threshold=0.5, inference_framework="onnx")
         
     wakeword_key = list(oww_model.models.keys())[0]
     print(f"[Reconocimiento] Modelo cargado con éxito. Palabra de activación: '{wakeword_key}'")
@@ -128,8 +128,9 @@ def escuchar_continuo(callback_ui=None):
                     
                     # Evitar ejecutar la red neuronal si hay silencio absoluto o el micrófono está apagado.
                     # Los modelos ONNX suelen dar predicciones falsas estables de ~0.37 cuando reciben todo ceros (silencio).
+                    prediction = oww_model.predict(chunk)
+                    
                     if energia > 30:
-                        prediction = oww_model.predict(chunk)
                         conf = prediction.get(wakeword_key, 0.0)
                     else:
                         conf = 0.0
@@ -137,7 +138,7 @@ def escuchar_continuo(callback_ui=None):
                     if callback_ui and jarvis_activo:
                         callback_ui("esperando", energia, conf)
                     
-                    # Umbral muy bajo (0.3) para permitir activaciones solo diciendo "Jarvis"
+                    # Umbral bajo (0.3) = máxima sensibilidad funcional, activa con decir "Jarvis" bajito
                     if conf > 0.3:
                         # ¡Wake word detectado!
                         if not jarvis_activo:

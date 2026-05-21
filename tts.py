@@ -87,15 +87,17 @@ def _hablar_elevenlabs(texto: str) -> bool:
             for chunk in audio_generator:
                 f.write(chunk)
         
-        print("[TTS] 🎙️ Usando voz premium (ElevenLabs)")
-        _reproducir_audio(archivo_temp)
-        
-        # Limpiar (puede fallar si playsound no soltó el archivo, pero el SO lo borrará después)
-        try:
-            os.remove(archivo_temp)
-        except:
-            pass
-            
+        def run_audio():
+            print("[TTS] 🎙️ Usando voz premium (ElevenLabs)")
+            _reproducir_audio(archivo_temp)
+            try:
+                os.remove(archivo_temp)
+            except:
+                pass
+
+        import threading
+        t = threading.Thread(target=run_audio)
+        t.start()
         return True
     except Exception as e:
         print(f"[TTS] ElevenLabs falló ({e}). Usando voz de respaldo...")
@@ -115,14 +117,18 @@ def _hablar_edge_tts(texto: str):
         communicate = edge_tts.Communicate(texto, EDGE_VOZ_BACKUP)
         await communicate.save(archivo_temp)
     
-    try:
-        # Ejecutar en un hilo separado para evitar conflictos con el event loop activo de FastAPI
-        t = threading.Thread(target=lambda: asyncio.run(generar()))
-        t.start()
-        t.join()
-        
+    def run_tts():
+        asyncio.run(generar())
         print("[TTS] 📢 Usando voz de Microsoft (Edge-TTS)")
         _reproducir_audio(archivo_temp)
+        try:
+            os.remove(archivo_temp)
+        except:
+            pass
+
+    try:
+        t = threading.Thread(target=run_tts)
+        t.start()
     except Exception as e:
         print(f"[TTS] Error en Edge-TTS: {e}")
     finally:

@@ -2,9 +2,15 @@ import sys
 import os
 import time
 import math
-from PyQt6.QtWidgets import QApplication, QWidget
+
+# Evitar crash en pythonw al intentar imprimir (sys.stdout no soporta escritura)
+sys.stdout = open(os.path.join(os.path.dirname(__file__), "jarvis.log"), "w", encoding="utf-8", buffering=1)
+sys.stderr = open(os.path.join(os.path.dirname(__file__), "jarvis_error.log"), "w", encoding="utf-8", buffering=1)
+
+from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QSystemTrayIcon, QMenu
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QPointF
-from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QLinearGradient, QCursor, QPainterPath
+from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QLinearGradient, QCursor, QPainterPath, QIcon, QPixmap
+from PyQt6.QtGui import QAction
 
 import motor_audio
 
@@ -67,6 +73,32 @@ class JarvisWidget(QWidget):
         # Para arrastrar el widget
         self.drag_pos = None
         
+        # ====== Boton Ocultar ======
+        self.btn_hide = QPushButton("-", self)
+        self.btn_hide.resize(25, 25)
+        self.btn_hide.move(self.width() - 30, 5)
+        self.btn_hide.setStyleSheet("background-color: rgba(255,255,255,30); color: white; border-radius: 12px; font-weight: bold; font-size: 16px;")
+        self.btn_hide.clicked.connect(self.hide_to_tray)
+        self.btn_hide.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        # ====== System Tray ======
+        self.tray_icon = QSystemTrayIcon(self)
+        self.tray_icon.setIcon(self.create_tray_icon(4))
+        
+        tray_menu = QMenu()
+        restore_action = QAction("Mostrar Jarvis", self)
+        restore_action.triggered.connect(self.show_normal)
+        quit_action = QAction("Apagar Jarvis", self)
+        quit_action.triggered.connect(QApplication.instance().quit)
+        
+        tray_menu.addAction(restore_action)
+        tray_menu.addAction(quit_action)
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.show()
+        
+        # Al hacer doble clic en el tray
+        self.tray_icon.activated.connect(self.on_tray_activated)
+
         # Iniciar motor de audio
         self.worker = AudioWorker()
         self.worker.update_signal.connect(self.on_audio_update)
@@ -84,6 +116,54 @@ class JarvisWidget(QWidget):
 
     def mouseReleaseEvent(self, event):
         self.drag_pos = None
+
+    def hide_to_tray(self):
+        self.hide()
+        self.tray_icon.showMessage("Jarvis", "Me he ocultado. Sigo escuchando en segundo plano.", QSystemTrayIcon.MessageIcon.Information, 2000)
+
+    def show_normal(self):
+        self.show()
+        self.activateWindow()
+        
+    def on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self.show_normal()
+
+    def create_tray_icon(self, vol_boost):
+        pixmap = QPixmap(32, 32)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Elegir color
+        color = self.color_base
+        if self.estado_actual == "grabando": color = self.color_activo
+        elif self.estado_actual == "pensando": color = self.color_pensando
+        elif self.estado_actual == "hablando": color = self.color_hablando
+        
+        painter.setBrush(QBrush(color))
+        painter.setPen(Qt.PenStyle.NoPen)
+        
+        # Dibujar 4 barritas
+        bars = 4
+        bar_w = 4
+        gap = 2
+        start_x = (32 - (bars * bar_w + (bars - 1) * gap)) // 2
+        
+        import math
+        for i in range(bars):
+            factor = math.sin(((i + 1) / bars) * math.pi)
+            h = max(4, min(24, vol_boost * factor))
+            
+            if self.estado_actual == "hibernando": h = 2
+            elif self.estado_actual == "esperando" and vol_boost < 5: h = 4
+            
+            x = start_x + i * (bar_w + gap)
+            y = 16 - (h / 2)
+            painter.drawRoundedRect(int(x), int(y), bar_w, int(h), 2, 2)
+            
+        painter.end()
+        return QIcon(pixmap)
 
     def on_audio_update(self, estado, energia, conf):
         self.estado_actual = estado
@@ -144,6 +224,11 @@ class JarvisWidget(QWidget):
             self.current_heights[i] += diff * 0.3 # Factor de suavidad
             
         self.update() # Forzar repintado (llama a paintEvent)
+        
+        # Si está oculto, actualizar el icono del tray para mostrar la actividad
+        if self.isHidden():
+            avg_height = sum(self.current_heights) / len(self.current_heights)
+            self.tray_icon.setIcon(self.create_tray_icon(avg_height))
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -157,7 +242,7 @@ class JarvisWidget(QWidget):
             current_color = self.color_pensando
         elif self.estado_actual == "hablando":
             current_color = self.color_hablando
-        elif self.estado_actual == "esperando":
+        elif self.estado_actual == "hibernando":
             # Si hay algo de volumen, poner un rojizo tenue
             if self.energia_actual > 100:
                 current_color = QColor(200, 100, 100, 150)
@@ -195,7 +280,7 @@ class JarvisWidget(QWidget):
         mouse_pos = QCursor.pos()
         
         def draw_eye(eye_center):
-            if self.estado_actual == "esperando":
+            if self.estado_actual == "hibernando":
                 # Ojos cerrados (línea curva hacia abajo simulando estar durmiendo)
                 painter.setPen(QPen(QColor(150, 150, 150, 200), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
                 painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -242,4 +327,8 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     widget = JarvisWidget()
     widget.show()
+    
+    from ui_agenda import AgendaWidget
+    widget.agenda_widget = AgendaWidget()
+    
     sys.exit(app.exec())

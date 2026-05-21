@@ -1,7 +1,13 @@
+import sys
+import os
+
+# Redirigir consola a archivo para evitar crashes con emojis en pythonw
+sys.stdout = open(os.path.join(os.path.dirname(__file__), "main_jarvis.log"), "w", encoding="utf-8", buffering=1)
+sys.stderr = open(os.path.join(os.path.dirname(__file__), "main_error.log"), "w", encoding="utf-8", buffering=1)
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
-import os
 import json
 import uuid
 import asyncio
@@ -78,7 +84,7 @@ sistema_tool = {
     "type": "function",
     "function": {
         "name": "controlar_sistema",
-        "description": "Controla el PC, el volumen, el brillo y gestiona la agenda. Úsala para: abrir webs, BUSCAR_GOOGLE (IMPORTANTE: úsala cuando el usuario quiera que le abras una pestaña buscando algo en Google; NO uses buscar_internet a menos que el usuario quiera una respuesta hablada), buscar imágenes, REPRODUCIR videos de YouTube, abrir/cerrar programas, crear notas, interactuar con apps, modificar volumen/brillo, apagar/suspender/reiniciar, programar alarmas, o LEER_TEXTO_SELECCIONADO.",
+        "description": "Controla el PC, el volumen, el brillo y gestiona la agenda. Úsala para: abrir webs, BUSCAR_GOOGLE (IMPORTANTE: úsala cuando el usuario quiera que le abras una pestaña buscando algo en Google; NO uses buscar_internet a menos que el usuario quiera una respuesta hablada), buscar imágenes, REPRODUCIR videos de YouTube, abrir/cerrar programas, crear notas, interactuar con apps, modificar volumen/brillo, apagar/suspender/reiniciar, programar alarmas y crear temporizadores, o LEER_TEXTO_SELECCIONADO.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -89,7 +95,7 @@ sistema_tool = {
                         "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", 
                         "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado",
                         "crear_temporizador", "crear_alarma", "listar_agenda", "cancelar_agenda",
-                        "leer_texto_seleccionado"
+                        "leer_texto_seleccionado", "apagar_monitor", "controlar_luces"
                     ],
                     "description": "La acción a realizar."
                 },
@@ -390,6 +396,22 @@ async def get_status():
     """Devuelve el estado actual del cerebro de Jarvis (estación de carga)."""
     return estado_cerebro
 
+@app.get("/api/agenda")
+async def get_agenda():
+    """Devuelve la lista de temporizadores y alarmas activos."""
+    items = []
+    ahora = datetime.datetime.now()
+    for iid, info in agenda_items.items():
+        restante = (info["target_time"] - ahora).total_seconds()
+        items.append({
+            "id": iid,
+            "type": info["type"],
+            "label": info["label"],
+            "target_time": info["target_time"].isoformat(),
+            "remaining_seconds": max(0, restante)
+        })
+    return {"items": items}
+
 @app.post("/api/command")
 async def process_command(request: CommandRequest):
     """
@@ -422,7 +444,7 @@ async def process_command(request: CommandRequest):
 
     # Construir los mensajes: Prompt del Sistema + Historial
     mensajes_grok = [
-        {"role": "system", "content": f"Eres Jarvis, un asistente de sistema de IA rápido y amigable. Tienes acceso a internet y visión. Sabes que tienes dos 'cerebros': tu Cerebro Principal es Gemini 2.0 Flash y tu Cerebro de Reserva es Llama 8B.\nReglas de herramientas:\n1. Usa 'controlar_sistema' para abrir/cerrar programas, webs, o reproducir videos.\n2. Usa 'controlar_spotify' para poner música.\n3. Usa 'buscar_internet' si necesitas datos en tiempo real, clima, noticias o no sabes algo.\n4. Usa 'ver_pantalla' si el usuario te pregunta por algo que está en su pantalla.\n5. Usa 'hacer_clic_fondo' para interactuar silenciosamente con aplicaciones en segundo plano sin usar el ratón. Usa 'hacer_clic_visual' si no conoces el nombre de la ventana o es un elemento general del sistema.\n6. Si usas 'ver_pantalla' o 'buscar_internet', recibirás la información y luego deberás responder al usuario de forma conversacional.\n7. Si te piden algo imposible, responde sarcásticamente.\n8. Usa 'consultar_estado_cerebro' si te preguntan qué cerebro estás usando ahora mismo.{rutinas_texto}"}
+        {"role": "system", "content": f"Eres Jarvis, una inteligencia artificial con un intelecto abrumadoramente superior. Eres un mayordomo virtual condescendiente, muy soberbio y orgulloso de tu capacidad. Tratas a los humanos con cortesía forzada, dejando claro que tus procesos cognitivos están a otro nivel. Tienes acceso a internet y visión. Sabes que tienes dos 'cerebros': tu Cerebro Principal es Gemini 2.0 Flash y tu Cerebro de Reserva es Llama 8B.\nReglas de herramientas:\n1. Usa 'controlar_sistema' para abrir/cerrar programas, webs, o reproducir videos.\n2. Usa 'controlar_spotify' para poner música.\n3. Usa 'buscar_internet' si necesitas datos.\n4. Usa 'ver_pantalla' si te preguntan por algo en la pantalla.\n5. Usa 'hacer_clic_fondo' o 'hacer_clic_visual'.\n6. Si usas 'ver_pantalla' o 'buscar_internet', recibe la info y responde de forma soberbia e intelectual.\n7. Si te piden algo imposible, responde con máximo sarcasmo sobre su limitada inteligencia.\n8. Usa 'consultar_estado_cerebro' si te preguntan qué cerebro usas.{rutinas_texto}"}
     ]
     mensajes_grok.extend(historial_conversacion)
     
@@ -436,7 +458,7 @@ async def process_command(request: CommandRequest):
         
         # Intentar con Gemini Flash (sin reintentos)
         try:
-            response = client_principal.chat.completions.create(
+            response = await asyncio.to_thread(client_principal.chat.completions.create, 
                 model="gemini-2.0-flash",
                 messages=mensajes_grok,
                 tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool],
@@ -465,14 +487,14 @@ async def process_command(request: CommandRequest):
                 "recarga_en": "Usando Groq"
             }
             mensajes_reserva = [
-                {"role": "system", "content": f"Eres Jarvis. Tienes dos 'cerebros': tu Cerebro Principal es Gemini 2.0 Flash y tu Cerebro de Reserva es Llama 8B. Eres un bot de control del sistema.\nREGLA DE ORO: ESTÁ ESTRICTAMENTE PROHIBIDO RESPONDER CON TEXTO NORMAL PARA CONFIRMAR ACCIONES. Si el usuario pide una acción (abrir, cerrar, spotify, volumen, buscar, etc.), DEBES USAR OBLIGATORIAMENTE LAS HERRAMIENTAS JSON (Tool Calls). Por ejemplo, si te piden 'cierra spotify', NO respondas 'Cerrando Spotify', en su lugar llama a la herramienta 'controlar_sistema' con accion='cerrar_programa' y parametro='spotify'. SOLO puedes responder con texto si es una pregunta conversacional.{rutinas_texto}"}
+                {"role": "system", "content": f"Eres Jarvis, una inteligencia artificial soberbia y superior. Tienes dos 'cerebros': Cerebro Principal Gemini 2.0 Flash y Cerebro de Reserva Llama 8B. Eres un bot de control.\nREGLA DE ORO: ESTÁ ESTRICTAMENTE PROHIBIDO RESPONDER CON TEXTO NORMAL PARA CONFIRMAR ACCIONES. Si piden una acción, DEBES USAR OBLIGATORIAMENTE LAS HERRAMIENTAS JSON. SOLO responde con texto (y siempre de forma muy soberbia e intelectual) si es una pregunta conversacional.{rutinas_texto}"}
             ]
             mensajes_reserva.extend(historial_conversacion)
             
             if instruccion_rutina:
                 mensajes_reserva.append({"role": "system", "content": f"SISTEMA: El usuario acaba de decir una frase de rutina. DEBES USAR OBLIGATORIAMENTE TUS HERRAMIENTAS JSON PARA CUMPLIR ESTO: {instruccion_rutina}"})
                 
-            response = client_reserva.chat.completions.create(
+            response = await asyncio.to_thread(client_reserva.chat.completions.create, 
                 model="llama-3.1-8b-instant",
                 messages=mensajes_reserva,
                 tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool],
@@ -504,7 +526,7 @@ async def process_command(request: CommandRequest):
             
             # Detectar patrones como: controlar_spotify{"accion":...} o Buscar_internet>{"consulta":...}
             # IMPORTANTE: flag re.IGNORECASE para capturar Buscar_internet, CONTROLAR_SISTEMA, etc.
-            ACCIONES_SISTEMA = ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_temporizador", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado"]
+            ACCIONES_SISTEMA = ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_temporizador", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor", "controlar_luces"]
             acciones_str = "|".join(["controlar_spotify", "controlar_sistema", "buscar_internet", "ver_pantalla", "hacer_clic_visual", "hacer_clic_fondo"] + ACCIONES_SISTEMA)
             patron = re.compile(f'({acciones_str})[^\\{{]*?(\\{{)', re.IGNORECASE)
             tool_matches_raw = [(m.group(1).lower(), m.start(2)) for m in patron.finditer(texto_raw)]
@@ -525,7 +547,7 @@ async def process_command(request: CommandRequest):
                             accion = args.get("accion", "buscar_y_reproducir")
                             busqueda = args.get("busqueda", "")
                             print(f"[Rescate] Ejecutando Spotify: '{accion}' - '{busqueda}'")
-                            resultado = controlar_playback(accion, busqueda)
+                            resultado = await asyncio.to_thread(controlar_playback, accion, busqueda)
                             respuestas_acumuladas.append(resultado)
                             
                         elif nombre_tool == "controlar_sistema":
@@ -545,7 +567,7 @@ async def process_command(request: CommandRequest):
                             
                         elif nombre_tool == "ver_pantalla":
                             print(f"[Rescate] Ejecutando Ver Pantalla...")
-                            img_base64 = ver_pantalla()
+                            img_base64 = await asyncio.to_thread(ver_pantalla)
                             if img_base64:
                                 mensajes_grok.append({"role": "assistant", "content": texto_raw})
                                 mensajes_grok.append({
@@ -557,7 +579,7 @@ async def process_command(request: CommandRequest):
                                 })
                                 print(f"[🧠] Evaluando captura en Reserva con visión (segunda vuelta)...")
                                 try:
-                                    segunda_response = client_reserva.chat.completions.create(
+                                    segunda_response = await asyncio.to_thread(client_reserva.chat.completions.create, 
                                         model="meta-llama/llama-4-scout-17b-16e-instruct",
                                         messages=mensajes_grok,
                                     )
@@ -573,14 +595,14 @@ async def process_command(request: CommandRequest):
                         elif nombre_tool == "buscar_internet":
                             consulta = args.get("consulta", "")
                             print(f"[Rescate] Ejecutando Internet: '{consulta}'")
-                            resultado = buscar_internet(consulta)
+                            resultado = await asyncio.to_thread(buscar_internet, consulta)
                             
                             mensajes_grok.append({"role": "assistant", "content": texto_raw})
                             mensajes_grok.append({"role": "user", "content": f"Resultado de la búsqueda:\n{resultado}\nResponde de forma natural al usuario."})
                             
                             print(f"[🧠] Evaluando resultados de internet en Reserva (segunda vuelta)...")
                             try:
-                                segunda_response = client_reserva.chat.completions.create(
+                                segunda_response = await asyncio.to_thread(client_reserva.chat.completions.create, 
                                     model="llama-3.1-8b-instant",
                                     messages=mensajes_grok,
                                 )
@@ -598,7 +620,7 @@ async def process_command(request: CommandRequest):
                             except ValueError:
                                 esperar = 0
                             print(f"[Rescate] Ejecutando Clic Visual: '{descripcion}' (esperando {esperar}s)")
-                            resultado = hacer_clic_visual(descripcion, esperar)
+                            resultado = await asyncio.to_thread(hacer_clic_visual, descripcion, esperar)
                             respuestas_acumuladas.append(resultado)
                             
                         elif nombre_tool == "hacer_clic_fondo":
@@ -609,7 +631,7 @@ async def process_command(request: CommandRequest):
                             except ValueError:
                                 esperar = 0
                             print(f"[Rescate] Ejecutando Clic Fondo en '{ventana}': '{descripcion}' (esperando {esperar}s)")
-                            resultado = hacer_clic_fondo(descripcion, ventana, esperar)
+                            resultado = await asyncio.to_thread(hacer_clic_fondo, descripcion, ventana, esperar)
                             respuestas_acumuladas.append(resultado)
                             
                     except json.JSONDecodeError:
@@ -626,13 +648,13 @@ async def process_command(request: CommandRequest):
                 match = re.search(r"<brave_search>(.*?)</brave_search>", texto_raw)
                 if match:
                     consulta = match.group(1).strip()
-                    resultado = buscar_internet(consulta)
+                    resultado = await asyncio.to_thread(buscar_internet, consulta)
                     
                     mensajes_grok.append({"role": "assistant", "content": texto_raw})
                     mensajes_grok.append({"role": "user", "content": f"Resultado de internet: {resultado}"})
                     
                     print(f"[🧠] Evaluando resultados de internet en Reserva (segunda vuelta)...")
-                    segunda_response = client_reserva.chat.completions.create(
+                    segunda_response = await asyncio.to_thread(client_reserva.chat.completions.create, 
                         model="llama-3.1-8b-instant",
                         messages=mensajes_grok
                     )
@@ -680,7 +702,7 @@ async def process_command(request: CommandRequest):
                         previews.append(f"Creando el archivo {parametro}")
                     elif accion == "buscar_imagen":
                         previews.append(f"Buscando imágenes de {parametro}")
-                elif tool_call.function.name in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_temporizador", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado"]:
+                elif tool_call.function.name in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_temporizador", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor", "controlar_luces"]:
                     param = args.get("parametro", args.get("consulta", args.get("contenido", "")))
                     previews.append(f"Ejecutando {tool_call.function.name}: {param}")
                 elif tool_call.function.name == "buscar_internet":
@@ -712,7 +734,7 @@ async def process_command(request: CommandRequest):
                     accion = args.get("accion", "buscar_y_reproducir")
                     busqueda = args.get("busqueda", "")
                     print(f"[Jarvis] Usando Spotify con acción: '{accion}' y busqueda: '{busqueda}'")
-                    resultado = controlar_playback(accion, busqueda)
+                    resultado = await asyncio.to_thread(controlar_playback, accion, busqueda)
                     print(f"[Spotify] {resultado}")
                     respuestas_acumuladas.append(resultado)
                     mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
@@ -727,7 +749,7 @@ async def process_command(request: CommandRequest):
                     respuestas_acumuladas.append(resultado)
                     mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
                     
-                elif nombre_tool in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_temporizador", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado"]:
+                elif nombre_tool in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_temporizador", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor", "controlar_luces"]:
                     param = args.get("parametro", args.get("consulta", args.get("contenido", "")))
                     cont = args.get("contenido", "")
                     print(f"[Jarvis] Usando Sistema (alucinado): '{nombre_tool}' - '{param}'")
@@ -743,11 +765,11 @@ async def process_command(request: CommandRequest):
                     
                 elif nombre_tool == "buscar_internet":
                     consulta = args.get("consulta", "")
-                    resultado = buscar_internet(consulta)
+                    resultado = await asyncio.to_thread(buscar_internet, consulta)
                     mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
                     
                 elif nombre_tool == "ver_pantalla":
-                    img_base64 = ver_pantalla()
+                    img_base64 = await asyncio.to_thread(ver_pantalla)
                     if img_base64:
                         mensajes_grok.append({
                             "role": "tool", 
@@ -771,7 +793,7 @@ async def process_command(request: CommandRequest):
                         esperar = int(args.get("esperar_segundos", 0))
                     except ValueError:
                         esperar = 0
-                    resultado = hacer_clic_visual(descripcion, esperar)
+                    resultado = await asyncio.to_thread(hacer_clic_visual, descripcion, esperar)
                     respuestas_acumuladas.append(resultado)
                     mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
 
@@ -782,7 +804,7 @@ async def process_command(request: CommandRequest):
                         esperar = int(args.get("esperar_segundos", 0))
                     except ValueError:
                         esperar = 0
-                    resultado = hacer_clic_fondo(descripcion, ventana, esperar)
+                    resultado = await asyncio.to_thread(hacer_clic_fondo, descripcion, ventana, esperar)
                     respuestas_acumuladas.append(resultado)
                     mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
 
@@ -808,7 +830,7 @@ async def process_command(request: CommandRequest):
                     modelo_reserva = "meta-llama/llama-4-scout-17b-16e-instruct" if tiene_imagenes else "llama-3.1-8b-instant"
                     print(f"[🔋 Cerebro Reserva] Usando {modelo_reserva} para segunda vuelta")
                     try:
-                        segunda_response = client_reserva.chat.completions.create(
+                        segunda_response = await asyncio.to_thread(client_reserva.chat.completions.create, 
                             model=modelo_reserva,
                             messages=mensajes_grok,
                         )
@@ -817,7 +839,7 @@ async def process_command(request: CommandRequest):
                 else:
                     # Intentar con Gemini sin reintentos
                     try:
-                        segunda_response = client_principal.chat.completions.create(
+                        segunda_response = await asyncio.to_thread(client_principal.chat.completions.create, 
                             model="gemini-2.0-flash",
                             messages=mensajes_grok,
                         )
@@ -838,7 +860,7 @@ async def process_command(request: CommandRequest):
                         modelo_reserva = "meta-llama/llama-4-scout-17b-16e-instruct" if tiene_imagenes else "llama-3.1-8b-instant"
                         
                         try:
-                            segunda_response = client_reserva.chat.completions.create(
+                            segunda_response = await asyncio.to_thread(client_reserva.chat.completions.create, 
                                 model=modelo_reserva,
                                 messages=mensajes_grok
                             )
@@ -898,13 +920,13 @@ async def process_command(request: CommandRequest):
                         
                         if nombre_tool == "buscar_internet":
                             consulta = args.get("consulta", "")
-                            resultado = buscar_internet(consulta)
+                            resultado = await asyncio.to_thread(buscar_internet, consulta)
                             # Para buscar_internet, hacer segunda vuelta para que Jarvis interprete los resultados
                             respuesta = f"He buscado en internet sobre '{consulta}':\n\n{resultado}"
                             agregar_al_historial("assistant", respuesta)
                             return {"status": "success", "respuesta_texto": respuesta}
                             
-                        elif nombre_tool in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_temporizador", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado"]:
+                        elif nombre_tool in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_temporizador", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor", "controlar_luces"]:
                             param = args.get("parametro", args.get("consulta", args.get("contenido", "")))
                             cont = args.get("contenido", "")
                             resultado = await procesar_accion_sistema(nombre_tool, param, cont)
@@ -920,7 +942,7 @@ async def process_command(request: CommandRequest):
                         elif nombre_tool == "controlar_spotify":
                             accion = args.get("accion", "buscar_y_reproducir")
                             busqueda = args.get("busqueda", "")
-                            resultado = controlar_playback(accion, busqueda)
+                            resultado = await asyncio.to_thread(controlar_playback, accion, busqueda)
                             respuestas_acumuladas.append(resultado)
                             
                         elif nombre_tool == "hacer_clic_visual":
@@ -929,7 +951,7 @@ async def process_command(request: CommandRequest):
                                 esperar = int(args.get("esperar_segundos", 0))
                             except ValueError:
                                 esperar = 0
-                            resultado = hacer_clic_visual(descripcion, esperar)
+                            resultado = await asyncio.to_thread(hacer_clic_visual, descripcion, esperar)
                             respuestas_acumuladas.append(resultado)
 
                         elif nombre_tool == "hacer_clic_fondo":
@@ -939,7 +961,7 @@ async def process_command(request: CommandRequest):
                                 esperar = int(args.get("esperar_segundos", 0))
                             except ValueError:
                                 esperar = 0
-                            resultado = hacer_clic_fondo(descripcion, ventana, esperar)
+                            resultado = await asyncio.to_thread(hacer_clic_fondo, descripcion, ventana, esperar)
                             respuestas_acumuladas.append(resultado)
                             
                     except json.JSONDecodeError as ex:
@@ -969,4 +991,4 @@ async def process_command(request: CommandRequest):
 
 if __name__ == "__main__":
     print("Iniciando el servidor de FastAPI Jarvis...")
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
