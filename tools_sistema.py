@@ -375,6 +375,18 @@ def controlar_sistema(accion: str, parametro: str = "", contenido: str = ""):
                 except Exception as e:
                     return f"Error al interactuar: {e}"
         
+        elif accion == "presionar_tecla":
+            try:
+                import pyautogui
+                tecla = parametro.lower().strip()
+                pyautogui.press(tecla)
+                print(f"[Sistema] Tecla presionada: {tecla}")
+                return f"Se ha presionado la tecla '{tecla}'."
+            except ImportError:
+                return "Error: Falta la librería pyautogui."
+            except Exception as e:
+                return f"Error al presionar tecla: {e}"
+
         elif accion == "modificar_volumen":
             try:
                 from pycaw.pycaw import AudioUtilities

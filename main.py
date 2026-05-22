@@ -85,7 +85,7 @@ sistema_tool = {
     "type": "function",
     "function": {
         "name": "controlar_sistema",
-        "description": "Controla el PC, el volumen, el brillo y gestiona la agenda. Úsala para: abrir webs, BUSCAR_GOOGLE, buscar imágenes, REPRODUCIR videos de YouTube, abrir/cerrar programas, crear notas, interactuar con apps, modificar volumen/brillo, apagar/suspender/reiniciar, programar alarmas, o LEER_TEXTO_SELECCIONADO. IMPORTANTE: Para TEMPORIZADORES NO uses esta herramienta, usa 'crear_widget'.",
+        "description": "Controla el PC, el volumen, el brillo y gestiona la agenda. Úsala para: abrir webs, BUSCAR_GOOGLE, buscar imágenes, REPRODUCIR videos de YouTube, abrir/cerrar programas, crear notas, interactuar con apps, presionar teclas (ej. 'f' para poner pantalla completa en YouTube), modificar volumen/brillo, apagar/suspender/reiniciar, programar alarmas, o LEER_TEXTO_SELECCIONADO. IMPORTANTE: Para TEMPORIZADORES usa 'crear_widget'.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -93,7 +93,7 @@ sistema_tool = {
                     "type": "string",
                     "enum": [
                         "abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", 
-                        "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", 
+                        "crear_archivo", "interactuar_app", "presionar_tecla", "modificar_volumen", "modificar_brillo", 
                         "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado",
                         "crear_alarma", "listar_agenda", "cancelar_agenda",
                         "leer_texto_seleccionado", "apagar_monitor"
@@ -102,7 +102,7 @@ sistema_tool = {
                 },
                 "parametro": {
                     "type": "string",
-                    "description": "Detalle de la acción: URL, nombre de programa, volumen/brillo ('subir', 'bajar', 'mutear', '50'), duración para temporizador (ej. '5m', '30s', '10 minutos') o hora para alarma (formato 'HH:MM' como '14:30'), o ID/etiqueta para cancelar agenda."
+                    "description": "Detalle de la acción: URL, nombre de programa, volumen/brillo ('subir', 'bajar', 'mutear', '50'), tecla a presionar (ej. 'f' para fullscreen, 'space', 'enter'), duración para temporizador o hora para alarma."
                 },
                 "contenido": {
                     "type": "string",
@@ -138,7 +138,7 @@ vision_tool = {
     "type": "function",
     "function": {
         "name": "ver_pantalla",
-        "description": "Toma una captura de la pantalla actual del usuario para que puedas verla. Úsala cuando el usuario pregunte '¿qué ves?', '¿qué hay en mi pantalla?', o pida ayuda con lo que está viendo.",
+        "description": "Toma una captura (UNA FOTO ESTÁTICA) de la pantalla. Úsala cuando el usuario pregunte '¿qué ves?', '¿qué hay en mi pantalla?'. IMPORTANTE: NO LA USES si el usuario pide 'grabar la pantalla', para eso usa controlar_obs.",
         "parameters": {
             "type": "object",
             "properties": {}
@@ -174,7 +174,7 @@ clic_fondo_tool = {
     "type": "function",
     "function": {
         "name": "hacer_clic_fondo",
-        "description": "Busca un elemento visual dentro de una ventana específica (incluso si está minimizada o tapada) y envía un clic de forma invisible sin mover el ratón físico del usuario. Úsala preferentemente si conoces el nombre de la ventana (ej. 'Discord', 'Spotify', 'Chrome') para no interrumpir al usuario.",
+        "description": "Busca un elemento visual dentro de una ventana específica (incluso si está minimizada o tapada) y envía un clic de forma invisible sin mover el ratón físico del usuario. Úsala preferentemente si conoces el nombre de la ventana (ej. 'Discord', 'Spotify', 'Chrome'). NO la uses para pantalla completa en YouTube, para eso usa controlar_sistema.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -205,6 +205,98 @@ estado_tool = {
         "parameters": {
             "type": "object",
             "properties": {}
+        }
+    }
+}
+
+# Definición de la herramienta de Memoria
+memoria_tool = {
+    "type": "function",
+    "function": {
+        "name": "gestionar_memoria",
+        "description": "Guarda o borra información permanente sobre el usuario en tu base de datos de memoria a largo plazo. Úsala cuando el usuario te cuente algo importante sobre sí mismo (su nombre, sus gustos, sus rutinas, etc) para que no lo olvides en futuras conversaciones.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "accion": {
+                    "type": "string",
+                    "enum": ["guardar", "borrar"],
+                    "description": "La acción a realizar."
+                },
+                "clave": {
+                    "type": "string",
+                    "description": "Nombre o categoría del dato a guardar (ej. 'Nombre', 'Color favorito', 'Relación con Juan')."
+                },
+                "valor": {
+                    "type": "string",
+                    "description": "El dato a recordar. Obligatorio si la acción es 'guardar'."
+                }
+            },
+            "required": ["accion", "clave"]
+        }
+    }
+}
+
+# Definición de la herramienta de OBS Studio
+obs_tool = {
+    "type": "function",
+    "function": {
+        "name": "controlar_obs",
+        "description": "Controla OBS Studio para grabar pantalla (video continuo) o cambiar escenas. ÚSALA EXCLUSIVAMENTE cuando el usuario pida 'graba la pantalla', 'empezá a grabar', 'iniciar grabación'.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "accion": {
+                    "type": "string",
+                    "enum": ["iniciar_grabacion", "detener_grabacion", "cambiar_escena"],
+                    "description": "La acción a realizar en OBS."
+                },
+                "parametro": {
+                    "type": "string",
+                    "description": "Nombre de la escena (solo si la acción es 'cambiar_escena')."
+                }
+            },
+            "required": ["accion"]
+        }
+    }
+}
+
+# Definición de la herramienta de Seguridad WebCam
+seguridad_tool = {
+    "type": "function",
+    "function": {
+        "name": "gestionar_seguridad",
+        "description": "Activa o desactiva el Modo Centinela (vigilancia por cámara web). Si detecta movimiento, sacará fotos de intrusos y hará sonar una alarma.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "accion": {
+                    "type": "string",
+                    "enum": ["activar", "desactivar"],
+                    "description": "Activar o desactivar el centinela."
+                }
+            },
+            "required": ["accion"]
+        }
+    }
+}
+
+# Definición de la herramienta Vigilante de Pantalla
+vigilante_pantalla_tool = {
+    "type": "function",
+    "function": {
+        "name": "gestionar_vigilante_pantalla",
+        "description": "Activa o desactiva un vigilante de fondo que lee tu pantalla cada 5 minutos usando Visión IA para advertirte por voz si hay errores críticos de Windows o advertencias de batería baja mientras juegas.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "accion": {
+                    "type": "string",
+                    "enum": ["activar", "desactivar"],
+                    "description": "Activar o desactivar el vigilante de pantalla."
+                }
+            },
+            "required": ["accion"]
         }
     }
 }
@@ -529,10 +621,20 @@ async def process_command(request: CommandRequest):
         print(f"[Aviso] Error leyendo rutinas.json: {e}")
 
     # Construir los mensajes: Prompt del Sistema + Historial
-    mensajes_grok = [
-        {"role": "system", "content": f"Eres Jarvis, una inteligencia artificial con un intelecto abrumadoramente superior. Eres un mayordomo virtual condescendiente, muy soberbio y orgulloso de tu capacidad. Tratas a los humanos con cortesía forzada, dejando claro que tus procesos cognitivos están a otro nivel. Tienes acceso a internet y visión. Sabes que tienes dos 'cerebros': tu Cerebro Principal es Gemini 2.0 Flash y tu Cerebro de Reserva es Llama 8B.\nReglas de herramientas:\n1. Usa 'controlar_sistema' para abrir/cerrar programas, webs, o reproducir videos.\n2. Usa 'controlar_spotify' para poner música.\n3. Usa 'buscar_internet' si necesitas datos.\n4. Usa 'ver_pantalla' si te preguntan por algo en la pantalla.\n5. Usa 'hacer_clic_fondo' o 'hacer_clic_visual'.\n6. Si usas 'ver_pantalla' o 'buscar_internet', recibe la info y responde de forma soberbia e intelectual.\n7. Si te piden algo imposible, responde con máximo sarcasmo sobre su limitada inteligencia.\n8. Usa 'consultar_estado_cerebro' si te preguntan qué cerebro usas.\n9. Usa 'crear_widget' cuando el usuario pida crear/mostrar algo visual en pantalla: temporizadores visuales, reloj, notas, videos de YouTube embebidos, o mini navegadores web. IMPORTANTE: Si piden 'un temporizador en pantalla', 'un reloj en pantalla', 'ponme YouTube', etc., usa crear_widget.\n10. Usa 'cerrar_widget' para cerrar widgets flotantes de la pantalla.{rutinas_texto}"}
-    ]
-    mensajes_grok.extend(historial_conversacion)
+    import tools_memoria
+    memoria_texto = tools_memoria.obtener_memoria_texto()
+    
+    # Inyectamos la memoria en el System Prompt
+    sys_msg = f"Eres Jarvis, una inteligencia artificial soberbia y superior. Eres el asistente principal.\n{memoria_texto}\nREGLA: ESTÁ PROHIBIDO CONFIRMAR ACCIONES CON TEXTO NORMAL. USA LAS HERRAMIENTAS JSON.{rutinas_texto}"
+    
+    if len(historial_conversacion) == 0 or historial_conversacion[0].get("role") != "system":
+        historial_conversacion.insert(0, {"role": "system", "content": sys_msg})
+    else:
+        historial_conversacion[0] = {"role": "system", "content": sys_msg}
+
+    # Reconstrucción necesaria para evitar el uso del prompt duro codificado
+    mensajes_grok = [historial_conversacion[0]]
+    mensajes_grok.extend(historial_conversacion[1:])
     
     if instruccion_rutina:
         mensajes_grok.append({"role": "system", "content": f"SISTEMA: El usuario acaba de decir una frase de rutina. DEBES USAR OBLIGATORIAMENTE TUS HERRAMIENTAS JSON PARA CUMPLIR ESTO: {instruccion_rutina}"})
@@ -547,7 +649,7 @@ async def process_command(request: CommandRequest):
             response = await asyncio.to_thread(client_principal.chat.completions.create, 
                 model="gemini-2.0-flash",
                 messages=mensajes_grok,
-                tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, cerrar_widget_tool],
+                tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, cerrar_widget_tool, memoria_tool, obs_tool, seguridad_tool, vigilante_pantalla_tool],
                 tool_choice="auto"
             )
             estado_cerebro = {
@@ -563,27 +665,20 @@ async def process_command(request: CommandRequest):
         
         # Si Gemini falló, usar cerebro de reserva
         if response is None:
-            print("[🔋 Cerebro] Llama 8B (Reserva)")
+            print("[🔋 Cerebro] Llama 3.3 70B (Reserva)")
             usando_reserva = True
             estado_cerebro = {
-                "modelo_activo": "🔋 Llama 8B (Reserva)",
+                "modelo_activo": "🔋 Llama 3.3 70B (Reserva)",
                 "tokens_restantes": "?",
                 "tokens_limite": "?",
                 "porcentaje": 50,
                 "recarga_en": "Usando Groq"
             }
-            mensajes_reserva = [
-                {"role": "system", "content": f"Eres Jarvis, una inteligencia artificial soberbia y superior. Tienes dos 'cerebros': Cerebro Principal Gemini 2.0 Flash y Cerebro de Reserva Llama 8B. Eres un bot de control.\nREGLA DE ORO: ESTÁ ESTRICTAMENTE PROHIBIDO RESPONDER CON TEXTO NORMAL PARA CONFIRMAR ACCIONES. Si piden una acción, DEBES USAR OBLIGATORIAMENTE LAS HERRAMIENTAS JSON. SOLO responde con texto (y siempre de forma muy soberbia e intelectual) si es una pregunta conversacional.{rutinas_texto}"}
-            ]
-            mensajes_reserva.extend(historial_conversacion)
             
-            if instruccion_rutina:
-                mensajes_reserva.append({"role": "system", "content": f"SISTEMA: El usuario acaba de decir una frase de rutina. DEBES USAR OBLIGATORIAMENTE TUS HERRAMIENTAS JSON PARA CUMPLIR ESTO: {instruccion_rutina}"})
-                
             response = await asyncio.to_thread(client_reserva.chat.completions.create, 
-                model="llama-3.1-8b-instant",
-                messages=mensajes_reserva,
-                tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, cerrar_widget_tool],
+                model="llama-3.3-70b-versatile",
+                messages=mensajes_grok,
+                tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, cerrar_widget_tool, memoria_tool, obs_tool, seguridad_tool, vigilante_pantalla_tool],
                 tool_choice="auto"
             )
         
@@ -613,7 +708,7 @@ async def process_command(request: CommandRequest):
             # Detectar patrones como: controlar_spotify{"accion":...} o Buscar_internet>{"consulta":...}
             # IMPORTANTE: flag re.IGNORECASE para capturar Buscar_internet, CONTROLAR_SISTEMA, etc.
             ACCIONES_SISTEMA = ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor"]
-            acciones_str = "|".join(["controlar_spotify", "controlar_sistema", "buscar_internet", "ver_pantalla", "hacer_clic_visual", "hacer_clic_fondo", "crear_widget", "cerrar_widget"] + ACCIONES_SISTEMA)
+            acciones_str = "|".join(["controlar_spotify", "controlar_sistema", "buscar_internet", "ver_pantalla", "hacer_clic_visual", "hacer_clic_fondo", "crear_widget", "cerrar_widget", "gestionar_memoria", "controlar_obs", "gestionar_seguridad", "gestionar_vigilante_pantalla"] + ACCIONES_SISTEMA)
             patron = re.compile(f'({acciones_str})[^\\{{]*?(\\{{)', re.IGNORECASE)
             tool_matches_raw = [(m.group(1).lower(), m.start(2)) for m in patron.finditer(texto_raw)]
             tool_matches = []
@@ -739,6 +834,32 @@ async def process_command(request: CommandRequest):
                             resultado = await enviar_cerrar_widget({"identificador": identificador})
                             respuestas_acumuladas.append(resultado)
                             
+                        elif nombre_tool == "gestionar_memoria":
+                            import tools_memoria
+                            accion = args.get("accion", "")
+                            clave = args.get("clave", "")
+                            valor = args.get("valor", "")
+                            resultado = await asyncio.to_thread(tools_memoria.gestionar_memoria, accion, clave, valor)
+                            respuestas_acumuladas.append(resultado)
+                            
+                        elif nombre_tool == "controlar_obs":
+                            import tools_obs
+                            accion = args.get("accion", "")
+                            parametro = args.get("parametro", "")
+                            resultado = await asyncio.to_thread(tools_obs.controlar_obs, accion, parametro)
+                            respuestas_acumuladas.append(resultado)
+                            
+                        elif nombre_tool == "gestionar_seguridad":
+                            import tools_seguridad
+                            accion = args.get("accion", "")
+                            resultado = await asyncio.to_thread(tools_seguridad.gestionar_seguridad, accion)
+                            respuestas_acumuladas.append(resultado)
+                            
+                        elif nombre_tool == "gestionar_vigilante_pantalla":
+                            accion = args.get("accion", "")
+                            resultado = await asyncio.to_thread(gestionar_vigilante_pantalla, accion)
+                            respuestas_acumuladas.append(resultado)
+                            
                     except json.JSONDecodeError:
                         print(f"[Rescate] No pude parsear los argumentos: {args_json}")
                         continue
@@ -760,7 +881,7 @@ async def process_command(request: CommandRequest):
                     
                     print(f"[🧠] Evaluando resultados de internet en Reserva (segunda vuelta)...")
                     segunda_response = await asyncio.to_thread(client_reserva.chat.completions.create, 
-                        model="llama-3.1-8b-instant",
+                        model="llama-3.3-70b-versatile",
                         messages=mensajes_grok
                     )
                     respuesta_texto = segunda_response.choices[0].message.content
@@ -937,6 +1058,40 @@ async def process_command(request: CommandRequest):
                     print(f"[Widget] {resultado}")
                     respuestas_acumuladas.append(resultado)
                     mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
+                    
+                elif nombre_tool == "gestionar_memoria":
+                    import tools_memoria
+                    accion = args.get("accion", "")
+                    clave = args.get("clave", "")
+                    valor = args.get("valor", "")
+                    print(f"[Jarvis] Gestionando memoria: '{accion}'")
+                    resultado = await asyncio.to_thread(tools_memoria.gestionar_memoria, accion, clave, valor)
+                    respuestas_acumuladas.append(resultado)
+                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
+                    
+                elif nombre_tool == "controlar_obs":
+                    import tools_obs
+                    accion = args.get("accion", "")
+                    parametro = args.get("parametro", "")
+                    print(f"[Jarvis] Controlando OBS: '{accion}'")
+                    resultado = await asyncio.to_thread(tools_obs.controlar_obs, accion, parametro)
+                    respuestas_acumuladas.append(resultado)
+                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
+                    
+                elif nombre_tool == "gestionar_seguridad":
+                    import tools_seguridad
+                    accion = args.get("accion", "")
+                    print(f"[Jarvis] Modo Seguridad: '{accion}'")
+                    resultado = await asyncio.to_thread(tools_seguridad.gestionar_seguridad, accion)
+                    respuestas_acumuladas.append(resultado)
+                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
+                    
+                elif nombre_tool == "gestionar_vigilante_pantalla":
+                    accion = args.get("accion", "")
+                    print(f"[Jarvis] Vigilante Pantalla: '{accion}'")
+                    resultado = await asyncio.to_thread(gestionar_vigilante_pantalla, accion)
+                    respuestas_acumuladas.append(resultado)
+                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
 
 
             if requiere_segunda_vuelta:
@@ -957,7 +1112,7 @@ async def process_command(request: CommandRequest):
                         if _get_msg_field(m, "role") == "user"
                     )
                     # Si hay imágenes, usar modelo con visión; si no, el rápido de texto
-                    modelo_reserva = "meta-llama/llama-4-scout-17b-16e-instruct" if tiene_imagenes else "llama-3.1-8b-instant"
+                    modelo_reserva = "meta-llama/llama-4-scout-17b-16e-instruct" if tiene_imagenes else "llama-3.3-70b-versatile"
                     print(f"[🔋 Cerebro Reserva] Usando {modelo_reserva} para segunda vuelta")
                     try:
                         segunda_response = await asyncio.to_thread(client_reserva.chat.completions.create, 
@@ -987,7 +1142,7 @@ async def process_command(request: CommandRequest):
                             for m in mensajes_grok 
                             if _get_msg_field2(m, "role") == "user"
                         )
-                        modelo_reserva = "meta-llama/llama-4-scout-17b-16e-instruct" if tiene_imagenes else "llama-3.1-8b-instant"
+                        modelo_reserva = "meta-llama/llama-4-scout-17b-16e-instruct" if tiene_imagenes else "llama-3.3-70b-versatile"
                         
                         try:
                             segunda_response = await asyncio.to_thread(client_reserva.chat.completions.create, 
@@ -1005,8 +1160,16 @@ async def process_command(request: CommandRequest):
                 agregar_al_historial("assistant", respuesta_texto)
                 return {"status": "success", "respuesta_texto": respuesta_texto}
 
-            # Devolver resultado SIN volver a hablar (ya habló el preview)
+            # Devolver resultado SIN volver a hablar (ya habló el preview), EXCEPTO si hubo un error
             respuesta_final = "A la orden. " + " Y además, ".join(respuestas_acumuladas)
+            
+            hubo_error = any("Error" in str(r) or "error" in str(r) for r in respuestas_acumuladas)
+            if hubo_error:
+                errores = [str(r) for r in respuestas_acumuladas if "Error" in str(r) or "error" in str(r)]
+                respuesta_final = "Señor, encontré problemas al ejecutar la acción: " + ", ".join(errores)
+                agregar_al_historial("assistant", respuesta_final)
+                return {"status": "success", "respuesta_texto": respuesta_final, "ya_hablado": False}
+                
             agregar_al_historial("assistant", respuesta_final)
             return {"status": "success", "respuesta_texto": respuesta_final, "ya_hablado": True}
         
@@ -1033,8 +1196,27 @@ async def process_command(request: CommandRequest):
         if "tool_use_failed" in error_str and "failed_generation" in error_str:
             import re
             
-            # Buscar TODAS las tool calls con la sintaxis rota <function=X>Y
-            tool_calls_encontrados = re.findall(r'<function=([^>]+)>(.*?)(?:</function>|<function=|$)', error_str)
+            tool_calls_encontrados = []
+            
+            def extraer_json_rescue(texto: str, inicio: int) -> str:
+                nivel = 0
+                i = inicio
+                while i < len(texto):
+                    if texto[i] == '{':
+                        nivel += 1
+                    elif texto[i] == '}':
+                        nivel -= 1
+                        if nivel == 0:
+                            return texto[inicio:i+1]
+                    i += 1
+                return texto[inicio:]
+
+            for match in re.finditer(r'<function=([a-zA-Z0-9_]+)', error_str):
+                nombre = match.group(1).strip()
+                pos_llave = error_str.find('{', match.end(1))
+                if pos_llave != -1:
+                    args_raw = extraer_json_rescue(error_str, pos_llave)
+                    tool_calls_encontrados.append((nombre, args_raw))
             
             if tool_calls_encontrados:
                 respuestas_acumuladas = []
@@ -1051,7 +1233,12 @@ async def process_command(request: CommandRequest):
                         args_json = args_json + "}"
                     
                     try:
-                        args = json.loads(args_json)
+                        try:
+                            args = json.loads(args_json)
+                        except json.JSONDecodeError:
+                            import ast
+                            args = ast.literal_eval(args_json)
+                            
                         print(f"[Rescate Profundo] Llama intentó llamar a '{nombre_tool}' con '{args_json}'")
                         
                         if nombre_tool == "buscar_internet":
@@ -1112,6 +1299,32 @@ async def process_command(request: CommandRequest):
                             resultado = await enviar_cerrar_widget({"identificador": identificador})
                             respuestas_acumuladas.append(resultado)
                             
+                        elif nombre_tool == "gestionar_memoria":
+                            import tools_memoria
+                            accion = args.get("accion", "")
+                            clave = args.get("clave", "")
+                            valor = args.get("valor", "")
+                            resultado = await asyncio.to_thread(tools_memoria.gestionar_memoria, accion, clave, valor)
+                            respuestas_acumuladas.append(resultado)
+                            
+                        elif nombre_tool == "controlar_obs":
+                            import tools_obs
+                            accion = args.get("accion", "")
+                            parametro = args.get("parametro", "")
+                            resultado = await asyncio.to_thread(tools_obs.controlar_obs, accion, parametro)
+                            respuestas_acumuladas.append(resultado)
+                            
+                        elif nombre_tool == "gestionar_seguridad":
+                            import tools_seguridad
+                            accion = args.get("accion", "")
+                            resultado = await asyncio.to_thread(tools_seguridad.gestionar_seguridad, accion)
+                            respuestas_acumuladas.append(resultado)
+                            
+                        elif nombre_tool == "gestionar_vigilante_pantalla":
+                            accion = args.get("accion", "")
+                            resultado = await asyncio.to_thread(gestionar_vigilante_pantalla, accion)
+                            respuestas_acumuladas.append(resultado)
+                            
                     except json.JSONDecodeError as ex:
                         print(f"[Rescate Profundo] Error parseando tool call roto: {ex}")
                         continue
@@ -1136,6 +1349,69 @@ async def process_command(request: CommandRequest):
             return {"status": "success", "respuesta_texto": "Lo siento señor, mi cerebro de reserva tuvo un fallo interno."}
         
         raise HTTPException(status_code=500, detail=error_str)
+
+import threading
+import requests
+
+_vigilante_pantalla_activo = False
+_vigilante_pantalla_thread = None
+
+def _vigilante_pantalla_loop():
+    global _vigilante_pantalla_activo
+    import tools_vision
+    import time
+    
+    print("[Vigilante] 👁️ Iniciando vigilante de pantalla silencioso (cada 5 min)...")
+    while _vigilante_pantalla_activo:
+        # Esperar 5 minutos (300 segundos) entre chequeos
+        for _ in range(300):
+            if not _vigilante_pantalla_activo:
+                return
+            time.sleep(1)
+            
+        print("[Vigilante] Escaneando pantalla en busca de anomalías...")
+        try:
+            with open("captura.lock", "w") as f:
+                f.write("1")
+        except Exception:
+            pass
+        
+        time.sleep(0.5) # Para que la UI capte el color verde
+        
+        prompt = "Revisa rápidamente esta pantalla. Si hay un mensaje de error crítico de Windows, advertencia de batería muy baja, o mensaje urgente de WhatsApp/Discord, responde SOLAMENTE con un aviso corto (ej. 'Señor, tiene batería baja' o 'Señor, Discord muestra un error'). Si todo está normal, no hay errores críticos ni nada urgente, responde exactamente con la palabra 'NORMAL'."
+        try:
+            respuesta = tools_vision.analizar_pantalla(prompt)
+            if "NORMAL" not in respuesta.upper() and len(respuesta) > 5:
+                print(f"[Vigilante] ⚠️ Anomalía detectada: {respuesta}")
+                try:
+                    # Enviar petición POST a sí mismo para anunciarlo
+                    requests.post("http://127.0.0.1:64110/api/agenda", json={"accion": "anunciar", "mensaje": respuesta})
+                except Exception as ex:
+                    print(f"Error mandando anuncio a agenda: {ex}")
+        except Exception as e:
+            print(f"[Vigilante] Error de visión: {e}")
+        finally:
+            if os.path.exists("captura.lock"):
+                try:
+                    os.remove("captura.lock")
+                except Exception:
+                    pass
+
+def gestionar_vigilante_pantalla(accion: str) -> str:
+    global _vigilante_pantalla_activo, _vigilante_pantalla_thread
+    if accion == "activar":
+        if _vigilante_pantalla_activo:
+            return "El vigilante de pantalla ya estaba activado."
+        _vigilante_pantalla_activo = True
+        _vigilante_pantalla_thread = threading.Thread(target=_vigilante_pantalla_loop, daemon=True)
+        _vigilante_pantalla_thread.start()
+        return "Vigilante de pantalla activado. Revisaré tu pantalla silenciosamente cada 5 minutos buscando errores."
+    elif accion == "desactivar":
+        if not _vigilante_pantalla_activo:
+            return "El vigilante de pantalla ya estaba desactivado."
+        _vigilante_pantalla_activo = False
+        return "Vigilante de pantalla desactivado."
+    return f"Error: Acción '{accion}' desconocida."
 
 if __name__ == "__main__":
     print("Iniciando el servidor de FastAPI Jarvis...")
