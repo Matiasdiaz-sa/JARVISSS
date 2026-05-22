@@ -5,6 +5,12 @@ import base64
 def ver_pantalla():
     """Toma una captura de pantalla y la devuelve codificada en base64 para el LLM."""
     try:
+        import os
+        try:
+            with open("vigilante_pantalla.lock", "w") as f:
+                f.write("1")
+        except Exception:
+            pass
         print("[Visión] Capturando la pantalla...")
         pantalla = ImageGrab.grab()
         
@@ -286,3 +292,59 @@ def hacer_clic_fondo(descripcion: str, ventana_titulo: str, esperar_segundos: in
         return f"Error: Faltan dependencias (pywin32) para clics en segundo plano ({e})."
     except Exception as e:
         return f"Error inesperado al hacer clic en fondo: {e}"
+
+def analizar_pantalla(prompt: str) -> str:
+    """Toma una captura de pantalla y se la envía a la IA de visión con el prompt dado."""
+    try:
+        import os
+        from openai import OpenAI
+        from dotenv import load_dotenv
+        
+        try:
+            with open("vigilante_pantalla.lock", "w") as f:
+                f.write("1")
+        except Exception:
+            pass
+
+        load_dotenv()
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return "Error: No hay GEMINI_API_KEY configurada para usar la visión."
+
+        img_str = ver_pantalla()
+        if not img_str:
+            return "Error: No se pudo capturar la pantalla."
+
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+        )
+
+        vision_messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_str}"}}
+                ]
+            }
+        ]
+
+        response = client.chat.completions.create(
+            model="gemini-2.0-flash",
+            messages=vision_messages,
+            temperature=0.2,
+            max_tokens=150
+        )
+        return response.choices[0].message.content.strip()
+
+    except Exception as e:
+        print(f"[Visión] Error en analizar_pantalla: {e}")
+        return f"Error analizando pantalla: {e}"
+    finally:
+        try:
+            import os
+            if os.path.exists("vigilante_pantalla.lock"):
+                os.remove("vigilante_pantalla.lock")
+        except Exception:
+            pass

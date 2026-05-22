@@ -6,5 +6,8 @@
     "modo fiesta": "Usa controlar_spotify para reproducir el playlist 'fiesta'.",
     "Buenos días": "Usa controlar_spotify para reproducir 'back in black - AC/DC'.",
     "hola mqgo": "Usa controlar_spotify para reproducir 'back in black - AC/DC'.",
-    "cancion favorita ada": "Usa controlar_spotify para reproducir la cancion 'manchild-sabrina carpenter' "
+    "cancion favorita ada": "Usa controlar_spotify para reproducir la cancion 'manchild-sabrina carpenter' ",
+    "abri fifa": "Usa controlar_sistema con la accion abrir_programa y parametro 'ea sports fc 26'.",
+    "abrir fifa": "Usa controlar_sistema con la accion abrir_programa y parametro 'ea sports fc 26'.",
+    "fifa": "Usa controlar_sistema con la accion abrir_programa y parametro 'ea sports fc 26'."
 }

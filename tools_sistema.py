@@ -115,6 +115,9 @@ def controlar_sistema(accion: str, parametro: str = "", contenido: str = "", con
                 "chrome": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
                 "steam": r"E:\Steam\Steam.exe",
                 "cs": r"E:\Steam\steamapps\common\Counter-Strike Global Offensive\csgo.exe",
+                "ea sports fc 26": "FC26.exe",
+                "fc 26": "FC26.exe",
+                "fifa": "FC26.exe",
             }
             
             if programa == "spotify":

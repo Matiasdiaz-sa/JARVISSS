@@ -398,11 +398,11 @@ class YouTubeWidget(BaseWidget):
                 # Buscar en YouTube
                 search_url = f"https://www.youtube.com/results?search_query={search_query.replace(' ', '+')}"
                 self._web_view.setUrl(QUrl(search_url))
-        except ImportError:
-            # Si no hay WebEngine, mostrar un mensaje
-            self._fallback_label = QLabel("⚠️ Instalar PyQt6-WebEngine\npip install PyQt6-WebEngine", self)
+        except Exception as e:
+            # Si no hay WebEngine, mostrar el mensaje de error exacto
+            self._fallback_label = QLabel(f"⚠️ Error cargando WebEngine:\n{e}\n\npip install PyQt6-WebEngine", self)
             self._fallback_label.setGeometry(20, 60, self.width() - 40, 100)
-            self._fallback_label.setStyleSheet(f"color: {COLORS['accent_orange'].name()}; font-family: '{FONT_FAMILY}'; font-size: 12px;")
+            self._fallback_label.setStyleSheet(f"color: {COLORS['accent_orange'].name()}; font-family: '{FONT_FAMILY}'; font-size: 10px;")
             self._fallback_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self._fallback_label.setWordWrap(True)
     
@@ -444,10 +444,10 @@ class WebWidget(BaseWidget):
                 url = f"https://{url}"
             
             self._web_view.setUrl(QUrl(url))
-        except ImportError:
-            self._fallback_label = QLabel("⚠️ Instalar PyQt6-WebEngine\npip install PyQt6-WebEngine", self)
+        except Exception as e:
+            self._fallback_label = QLabel(f"⚠️ Error cargando WebEngine:\n{e}\n\npip install PyQt6-WebEngine", self)
             self._fallback_label.setGeometry(20, 60, self.width() - 40, 100)
-            self._fallback_label.setStyleSheet(f"color: {COLORS['accent_orange'].name()}; font-family: '{FONT_FAMILY}'; font-size: 12px;")
+            self._fallback_label.setStyleSheet(f"color: {COLORS['accent_orange'].name()}; font-family: '{FONT_FAMILY}'; font-size: 10px;")
             self._fallback_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self._fallback_label.setWordWrap(True)
     

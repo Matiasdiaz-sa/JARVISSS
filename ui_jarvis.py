@@ -8,8 +8,12 @@ sys.stdout = open(os.path.join(os.path.dirname(__file__), "jarvis.log"), "w", en
 sys.stderr = open(os.path.join(os.path.dirname(__file__), "jarvis_error.log"), "w", encoding="utf-8", buffering=1)
 
 from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QSystemTrayIcon, QMenu
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QPointF
-from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QLinearGradient, QPainterPath, QIcon, QPixmap
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QPointF, QPoint
+try:
+    from PyQt6.QtWebEngineWidgets import QWebEngineView
+except Exception:
+    pass
+from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QLinearGradient, QRadialGradient, QPainterPath, QIcon, QPixmap, QCursor
 from PyQt6.QtGui import QAction
 
 import motor_audio
@@ -51,6 +55,7 @@ class JarvisWidget(QWidget):
         self.modo_centinela = False
         self.modo_captura = False
         self.modo_grabando_obs = False
+        self.modo_vigilante_pantalla = False
         
         # Colores Venom / Líquido Simbionte
         self.color_idle = QColor(15, 15, 20, 240) # Negro/Gris oscuro líquido
@@ -60,6 +65,7 @@ class JarvisWidget(QWidget):
         self.color_centinela = QColor(10, 10, 10, 255) # Negro azabache para centinela
         self.color_obs = QColor(0, 100, 50, 255) # Verde tóxico
         self.color_captura = QColor(120, 0, 120, 255) # Magenta oscuro
+        self.color_vigilante = QColor(0, 200, 255, 255) # Cian brillante para Ojo Líquido
         
         self.current_render_color = QColor(self.color_idle)
         
@@ -177,6 +183,7 @@ class JarvisWidget(QWidget):
         self.modo_centinela = os.path.exists("centinela.lock")
         self.modo_captura = os.path.exists("captura.lock")
         self.modo_grabando_obs = os.path.exists("obs_rec.lock") # Para el modo cámara verde
+        self.modo_vigilante_pantalla = os.path.exists("vigilante_pantalla.lock")
         
         if os.path.exists("pensando.lock"):
             self.estado_actual = "pensando"
@@ -289,6 +296,14 @@ class JarvisWidget(QWidget):
                     # Aplicar forma de estrella más un ligero destello
                     self.target_radii[i] = self.base_radius * (0.3 + 0.7 * estrella_rotada) + (hash(str(self.time_counter+i))%5)
                 
+        elif self.modo_vigilante_pantalla:
+            target_color = self.color_vigilante
+            # Forma de Orbe Base Fluido
+            onda_respiracion = math.sin(self.time_counter * 0.5) * 2
+            for i in range(self.num_points):
+                # Esfera orgánica ligeramente expandida
+                self.target_radii[i] = self.base_radius * 1.1 + onda_respiracion + base_noise[i]
+                
         elif self.modo_centinela:
             target_color = self.color_centinela
             # Modo alerta: picos afilados estáticos pero viscosos
@@ -361,6 +376,48 @@ class JarvisWidget(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(grad))
         painter.drawPath(path)
+        
+        # 3. Dibujar Ojo Interno (Pupila) si es el vigilante de pantalla
+        if getattr(self, 'modo_vigilante_pantalla', False):
+            # Obtener posición global del mouse
+            cursor_pos = QCursor.pos()
+            
+            # Obtener el centro global de la ventana del orbe
+            global_center = self.mapToGlobal(QPoint(center_x, center_y))
+            
+            # Vector del centro al mouse
+            dx = cursor_pos.x() - global_center.x()
+            dy = cursor_pos.y() - global_center.y()
+            
+            # Distancia y ángulo
+            dist = math.hypot(dx, dy)
+            angle = math.atan2(dy, dx)
+            
+            # Limitar el movimiento de la pupila
+            max_offset = 12
+            offset = min(max_offset, (dist / 150.0) * max_offset) if dist > 0 else 0
+            
+            # Pequeño temblor orgánico
+            micro_tremor_x = math.sin(self.time_counter * 3) * 1.0
+            micro_tremor_y = math.cos(self.time_counter * 2) * 1.0
+            
+            mov_x = (math.cos(angle) * offset) + micro_tremor_x
+            mov_y = (math.sin(angle) * offset) + micro_tremor_y
+            
+            pupil_x = center_x + mov_x
+            pupil_y = center_y + mov_y
+            
+            # Gradiente radial para la pupila profunda
+            grad_pupil = QRadialGradient(pupil_x, pupil_y, 10)
+            grad_pupil.setColorAt(0.0, base_color.darker(400))
+            grad_pupil.setColorAt(1.0, base_color.darker(150))
+            
+            painter.setBrush(QBrush(grad_pupil))
+            painter.drawEllipse(QPointF(pupil_x, pupil_y), 10, 10)
+            
+            # Mini reflejo de luz en la pupila para realismo
+            painter.setBrush(QBrush(QColor(255, 255, 255, 180)))
+            painter.drawEllipse(QPointF(pupil_x - 3, pupil_y - 3), 3, 3)
         
         # (Brillos eliminados por petición del usuario para dejar la masa limpia)
         

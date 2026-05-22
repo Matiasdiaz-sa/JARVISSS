@@ -603,6 +603,17 @@ async def create_widget(request: WidgetRequest):
     return {"status": "success", "message": result}
 
 @app.post("/api/command")
+async def process_command_wrapper(request: CommandRequest):
+    try:
+        return await process_command(request)
+    finally:
+        import os
+        try:
+            if os.path.exists("vigilante_pantalla.lock"):
+                os.remove("vigilante_pantalla.lock")
+        except Exception:
+            pass
+
 async def process_command(request: CommandRequest):
     """
     Endpoint que recibe el texto transcrito, llama a Grok y ejecuta la herramienta si es necesario.
@@ -1004,8 +1015,12 @@ async def process_command(request: CommandRequest):
             # 1. Primero: generar un aviso de lo que va a hacer y DECIRLO en voz alta (solo para sistema/spotify)
             previews = []
             requiere_segunda_vuelta = False
-            
-            mensajes_grok.append(message)
+            msg_dict = message.model_dump() if hasattr(message, "model_dump") else dict(message)
+            if "function_call" in msg_dict and msg_dict["function_call"] is None:
+                del msg_dict["function_call"]
+            if msg_dict.get("content") is None:
+                msg_dict["content"] = ""
+            mensajes_grok.append(msg_dict)
             
             for tool_call in message.tool_calls:
                 args = json.loads(tool_call.function.arguments)
@@ -1211,59 +1226,47 @@ async def process_command(request: CommandRequest):
                 print(f"[CEREBRO] Evaluando resultados de herramientas (segunda vuelta)...")
                 segunda_response = None
                 
-                if usando_reserva:
-                    # Detectar si hay imágenes en los mensajes (captura de pantalla)
-                    # Nota: mensajes_grok puede contener dicts Y objetos ChatCompletionMessage
-                    def _get_msg_field(m, field):
-                        if isinstance(m, dict):
-                            return m.get(field)
-                        return getattr(m, field, None)
-                    
-                    tiene_imagenes = any(
-                        isinstance(_get_msg_field(m, "content"), list) 
-                        for m in mensajes_grok 
-                        if _get_msg_field(m, "role") == "user"
-                    )
-                    # Si hay imágenes, usar modelo con visión; si no, el rápido de texto
-                    modelo_reserva = "meta-llama/llama-4-scout-17b-16e-instruct" if tiene_imagenes else "llama-3.3-70b-versatile"
-                    print(f"[RESERVA Cerebro Reserva] Usando {modelo_reserva} para segunda vuelta")
-                    try:
-                        segunda_response = await asyncio.to_thread(client_reserva.chat.completions.create, 
-                            model=modelo_reserva,
-                            messages=mensajes_grok,
-                        )
-                    except Exception as e:
-                        print(f"[Error Reserva] {e}")
-                else:
-                    # Intentar con Gemini sin reintentos
-                    try:
-                        segunda_response = await asyncio.to_thread(client_principal.chat.completions.create, 
-                            model="gemini-2.0-flash",
-                            messages=mensajes_grok,
-                        )
-                    except Exception as e:
-                        print(f"[⚠️] Error en segunda vuelta con Gemini: {e}. Usando Reserva con visión...")
-                        
-                        # Usar modelo con visión de Groq en lugar de descartar las imágenes
-                        def _get_msg_field2(m, field):
-                            if isinstance(m, dict):
-                                return m.get(field)
-                            return getattr(m, field, None)
-                        
-                        tiene_imagenes = any(
-                            isinstance(_get_msg_field2(m, "content"), list) 
-                            for m in mensajes_grok 
-                            if _get_msg_field2(m, "role") == "user"
-                        )
-                        modelo_reserva = "meta-llama/llama-4-scout-17b-16e-instruct" if tiene_imagenes else "llama-3.3-70b-versatile"
-                        
+                # Detectar si hay imágenes en los mensajes (captura de pantalla)
+                def _get_msg_field(m, field):
+                    if isinstance(m, dict):
+                        return m.get(field)
+                    return getattr(m, field, None)
+                
+                tiene_imagenes = any(
+                    isinstance(_get_msg_field(m, "content"), list) 
+                    for m in mensajes_grok 
+                    if _get_msg_field(m, "role") == "user"
+                )
+
+                try:
+                    if tiene_imagenes:
+                        # Limpiar mensajes problemáticos (tool calls) para no romper las APIs
+                        mensajes_limpios = []
+                        for m in mensajes_grok:
+                            role = _get_msg_field(m, "role")
+                            if role in ["system", "user"]:
+                                mensajes_limpios.append(m)
+                                
                         try:
-                            segunda_response = await asyncio.to_thread(client_reserva.chat.completions.create, 
-                                model=modelo_reserva,
-                                messages=mensajes_grok
+                            print("[RESERVA] Usando Gemini 2.0 Flash para visión en segunda vuelta.")
+                            segunda_response = await asyncio.to_thread(client_principal.chat.completions.create, 
+                                model="gemini-2.0-flash",
+                                messages=mensajes_limpios,
                             )
-                        except Exception as e:
-                            print(f"[Error Reserva Segunda Vuelta] {e}")
+                        except Exception as e_gemini:
+                            print(f"[RESERVA] Falló Gemini ({e_gemini}). Intentando con Nemotron Vision (OpenRouter)...")
+                            segunda_response = await asyncio.to_thread(client_terciario.chat.completions.create, 
+                                model="nvidia/nemotron-nano-12b-v2-vl:free",
+                                messages=mensajes_limpios,
+                            )
+                    else:
+                        print("[RESERVA] Usando Groq Llama 3.3 para texto en segunda vuelta.")
+                        segunda_response = await asyncio.to_thread(client_reserva.chat.completions.create, 
+                            model="llama-3.3-70b-versatile",
+                            messages=mensajes_grok,
+                        )
+                except Exception as e:
+                    print(f"[Error Reserva Segunda Vuelta] {e}")
                 
                 if segunda_response:
                     respuesta_texto = segunda_response.choices[0].message.content or "Aquí está la información."
@@ -1466,65 +1469,8 @@ async def process_command(request: CommandRequest):
 import threading
 import requests
 
-_vigilante_pantalla_activo = False
-_vigilante_pantalla_thread = None
-
-def _vigilante_pantalla_loop():
-    global _vigilante_pantalla_activo
-    import tools_vision
-    import time
-    
-    print("[Vigilante] OJO Iniciando vigilante de pantalla silencioso (cada 5 min)...")
-    while _vigilante_pantalla_activo:
-        # Esperar 5 minutos (300 segundos) entre chequeos
-        for _ in range(300):
-            if not _vigilante_pantalla_activo:
-                return
-            time.sleep(1)
-            
-        print("[Vigilante] Escaneando pantalla en busca de anomalías...")
-        try:
-            with open("captura.lock", "w") as f:
-                f.write("1")
-        except Exception:
-            pass
-        
-        time.sleep(0.5) # Para que la UI capte el color verde
-        
-        prompt = "Revisa rápidamente esta pantalla. Si hay un mensaje de error crítico de Windows, advertencia de batería muy baja, o mensaje urgente de WhatsApp/Discord, responde SOLAMENTE con un aviso corto (ej. 'Señor, tiene batería baja' o 'Señor, Discord muestra un error'). Si todo está normal, no hay errores críticos ni nada urgente, responde exactamente con la palabra 'NORMAL'."
-        try:
-            respuesta = tools_vision.analizar_pantalla(prompt)
-            if "NORMAL" not in respuesta.upper() and len(respuesta) > 5:
-                print(f"[Vigilante] ⚠️ Anomalía detectada: {respuesta}")
-                try:
-                    # Enviar petición POST a sí mismo para anunciarlo
-                    requests.post("http://127.0.0.1:64110/api/agenda", json={"accion": "anunciar", "mensaje": respuesta})
-                except Exception as ex:
-                    print(f"Error mandando anuncio a agenda: {ex}")
-        except Exception as e:
-            print(f"[Vigilante] Error de visión: {e}")
-        finally:
-            if os.path.exists("captura.lock"):
-                try:
-                    os.remove("captura.lock")
-                except Exception:
-                    pass
-
 def gestionar_vigilante_pantalla(accion: str) -> str:
-    global _vigilante_pantalla_activo, _vigilante_pantalla_thread
-    if accion == "activar":
-        if _vigilante_pantalla_activo:
-            return "El vigilante de pantalla ya estaba activado."
-        _vigilante_pantalla_activo = True
-        _vigilante_pantalla_thread = threading.Thread(target=_vigilante_pantalla_loop, daemon=True)
-        _vigilante_pantalla_thread.start()
-        return "Vigilante de pantalla activado. Revisaré tu pantalla silenciosamente cada 5 minutos buscando errores."
-    elif accion == "desactivar":
-        if not _vigilante_pantalla_activo:
-            return "El vigilante de pantalla ya estaba desactivado."
-        _vigilante_pantalla_activo = False
-        return "Vigilante de pantalla desactivado."
-    return f"Error: Acción '{accion}' desconocida."
+    return "Ya no necesitas activar el vigilante manualmente. Ahora me transformaré en el Ojo Líquido de forma automática en cuanto me pidas que lea o analice tu pantalla."
 
 if __name__ == "__main__":
     print("Iniciando el servidor de FastAPI Jarvis...")

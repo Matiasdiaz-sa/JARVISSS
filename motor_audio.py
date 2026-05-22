@@ -33,7 +33,7 @@ client = OpenAI(
 # CONFIGURACIÓN DEL MICRÓFONO SIEMPRE ACTIVO
 # ============================================================
 RATE = 16000                    # Frecuencia de muestreo
-UMBRAL_VOZ = 100 # Umbral de energía para empezar/mantener grabación
+UMBRAL_VOZ = 80 # Umbral de energía para empezar/mantener grabación
 SILENCIO_PARA_CORTAR = 1.0      # Segundos de silencio para finalizar el comando
 DURACION_MINIMA = 0.5           # Segundos mínimos que debe durar un audio para procesarlo ruidos sueltos
 
@@ -161,8 +161,8 @@ def escuchar_continuo(callback_ui=None):
                     if callback_ui and jarvis_activo:
                         callback_ui("esperando", energia, conf)
                     
-                    # Umbral subido (0.55) para evitar falsos positivos por ruido de fondo o televisión
-                    if conf > 0.55:
+                    # Umbral bajado (0.40) para hacer a Jarvis más sensible (antes 0.55)
+                    if conf > 0.40:
                         # ¡Wake word detectado!
                         if not jarvis_activo:
                             # Estaba hibernando, despertar sistemas
