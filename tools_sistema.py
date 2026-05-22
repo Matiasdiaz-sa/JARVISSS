@@ -44,7 +44,7 @@ def _buscar_en_menu_inicio(nombre_programa: str):
     return mejor_match
 
 
-def controlar_sistema(accion: str, parametro: str = "", contenido: str = ""):
+def controlar_sistema(accion: str, parametro: str = "", contenido: str = "", confirmado: bool = False):
     """
     Función diseñada para ser llamada por el LLM (Grok).
     Ejecuta comandos a nivel de sistema operativo (abrir webs, programas, etc.).
@@ -265,6 +265,44 @@ def controlar_sistema(accion: str, parametro: str = "", contenido: str = ""):
             except Exception as e:
                 return f"Error al intentar crear el archivo: {e}"
                 
+        elif accion == "eliminar_archivo":
+            if not parametro:
+                return "Error: No se especificó el nombre del archivo a eliminar."
+                
+            if not confirmado:
+                return f"⚠️ ATENCIÓN: El usuario ha pedido eliminar el archivo '{parametro}'. DEBES pedirle confirmación por voz antes de proceder. Dile: '¿Estás seguro de que deseas eliminar el archivo {parametro}?'"
+                
+            # Buscar en Escritorio y Documentos
+            escritorio = os.path.join(os.path.expanduser('~'), 'Desktop')
+            documentos = os.path.join(os.path.expanduser('~'), 'Documents')
+            
+            rutas_posibles = []
+            
+            # Si el usuario no dio extensión, buscar aproximaciones
+            if "." not in parametro:
+                for ext in [".txt", ".pdf", ".docx", ".jpg", ".png"]:
+                    rutas_posibles.append(os.path.join(escritorio, parametro + ext))
+                    rutas_posibles.append(os.path.join(documentos, parametro + ext))
+            else:
+                rutas_posibles.append(os.path.join(escritorio, parametro))
+                rutas_posibles.append(os.path.join(documentos, parametro))
+                
+            archivo_a_eliminar = None
+            for ruta in rutas_posibles:
+                if os.path.exists(ruta):
+                    archivo_a_eliminar = ruta
+                    break
+                    
+            if not archivo_a_eliminar:
+                return f"No se encontró el archivo '{parametro}' en el Escritorio ni en Documentos."
+                
+            try:
+                os.remove(archivo_a_eliminar)
+                print(f"[Sistema] Archivo eliminado: {archivo_a_eliminar}")
+                return f"El archivo '{os.path.basename(archivo_a_eliminar)}' ha sido eliminado correctamente."
+            except Exception as e:
+                return f"Error al intentar eliminar el archivo: {e}"
+                
         elif accion == "reproducir_youtube":
             p_lower = parametro.lower().strip()
             # Si Llama alucinó "música" o solo envió "youtube", abrimos la web principal en lugar de buscar un video
@@ -457,11 +495,22 @@ def controlar_sistema(accion: str, parametro: str = "", contenido: str = ""):
                 return f"Error al modificar brillo: {e}"
 
         elif accion == "apagar_sistema":
+            # Extra de seguridad por si la IA se confunde
+            param_str = str(parametro).lower() + " " + str(contenido).lower()
+            if "jarvis" in param_str or "asistente" in param_str or "inteligencia" in param_str or "ti" in param_str:
+                return "Entendido, me pongo en modo reposo. (Nota de seguridad: se abortó el apagado del PC físico porque la orden era para el asistente)."
+                
+            if not confirmado:
+                return "⚠️ ATENCIÓN: El usuario ha pedido apagar la computadora física. DEBES pedirle confirmación por voz antes de proceder. Dile: '¿Estás seguro de que deseas apagar la computadora por completo?'"
+                
             print("[Sistema] Apagando el PC en 15 segundos...")
             os.system("shutdown /s /t 15")
             return "Apagando el sistema en 15 segundos. Puedes decir 'cancela el apagado' para abortar."
 
         elif accion == "reiniciar_sistema":
+            if not confirmado:
+                return "⚠️ ATENCIÓN: El usuario ha pedido reiniciar la computadora física. DEBES pedirle confirmación por voz antes de proceder. Dile: '¿Estás seguro de que deseas reiniciar la computadora?'"
+                
             print("[Sistema] Reiniciando el PC en 15 segundos...")
             os.system("shutdown /r /t 15")
             return "Reiniciando el sistema en 15 segundos. Puedes decir 'cancela el apagado' para abortar."
@@ -483,8 +532,16 @@ def controlar_sistema(accion: str, parametro: str = "", contenido: str = ""):
             ctypes.windll.user32.SendMessageW(0xFFFF, 0x0112, 0xF170, 2)
             return "El monitor ha sido apagado. Mueva el ratón para encenderlo."
             
-
-            
+        elif accion == "cerrar_jarvis":
+            if not confirmado:
+                return "⚠️ ATENCIÓN: El usuario ha pedido apagar a Jarvis. Dile: '¿Desea que me apague y desconecte mis sistemas?'"
+                
+            print("[Sistema] Cerrando Jarvis...")
+            # We exit Python entirely to shut down Jarvis
+            import sys
+            import os
+            os._exit(0)
+            return "Apagando a Jarvis..."
             
         else:
             return f"Acción de sistema desconocida: {accion}"

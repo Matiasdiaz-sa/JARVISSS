@@ -56,6 +56,14 @@ client_reserva = OpenAI(
     base_url="https://api.groq.com/openai/v1"
 )
 
+# Cerebro Terciario: Claude 3.5 Sonnet via OpenRouter (por si los anteriores fallan)
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+client_terciario = OpenAI(
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1"
+)
+
 # Definición de la herramienta para Spotify según el estándar de OpenAI
 spotify_tool = {
     "type": "function",
@@ -85,7 +93,7 @@ sistema_tool = {
     "type": "function",
     "function": {
         "name": "controlar_sistema",
-        "description": "Controla el PC, el volumen, el brillo y gestiona la agenda. Úsala para: abrir webs, BUSCAR_GOOGLE, buscar imágenes, REPRODUCIR videos de YouTube, abrir/cerrar programas, crear notas, interactuar con apps, presionar teclas (ej. 'f' para poner pantalla completa en YouTube), modificar volumen/brillo, apagar/suspender/reiniciar, programar alarmas, o LEER_TEXTO_SELECCIONADO. IMPORTANTE: Para TEMPORIZADORES usa 'crear_widget'.",
+        "description": "Controla el PC, el volumen, el brillo y gestiona la agenda. Úsala para: abrir webs, BUSCAR_GOOGLE, buscar imágenes, REPRODUCIR videos de YouTube, abrir/cerrar programas, crear/eliminar notas o archivos, interactuar con apps, presionar teclas, modificar volumen/brillo, apagar/suspender/reiniciar, o programar alarmas. IMPORTANTE: Para 'eliminar_archivo', 'apagar_sistema' o 'cerrar_jarvis', SIEMPRE debes enviar 'confirmado': false la primera vez, y preguntarle al usuario por voz si está seguro. Solo si el usuario te dice que sí en su siguiente mensaje, vuelves a llamar la herramienta con 'confirmado': true. IMPORTANTE: 'apagar_sistema' apaga la COMPUTADORA entera. Si el usuario te pide a ti (Jarvis) que te apagues o te cierres, usa 'cerrar_jarvis'.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -93,10 +101,10 @@ sistema_tool = {
                     "type": "string",
                     "enum": [
                         "abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", 
-                        "crear_archivo", "interactuar_app", "presionar_tecla", "modificar_volumen", "modificar_brillo", 
+                        "crear_archivo", "eliminar_archivo", "interactuar_app", "presionar_tecla", "modificar_volumen", "modificar_brillo", 
                         "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado",
                         "crear_alarma", "listar_agenda", "cancelar_agenda",
-                        "leer_texto_seleccionado", "apagar_monitor"
+                        "leer_texto_seleccionado", "apagar_monitor", "cerrar_jarvis"
                     ],
                     "description": "La acción a realizar."
                 },
@@ -107,6 +115,10 @@ sistema_tool = {
                 "contenido": {
                     "type": "string",
                     "description": "Texto/contenido adicional, etiqueta o nombre descriptivo para el temporizador o la alarma (ej. 'cocinar fideos', 'despertar')."
+                },
+                "confirmado": {
+                    "type": "boolean",
+                    "description": "Solo usado para acciones peligrosas (apagar_sistema, eliminar_archivo). Envía false la primera vez. Si el usuario ya confirmó, envía true."
                 }
             },
             "required": ["accion", "parametro"]
@@ -383,11 +395,11 @@ cargar_memoria()
 
 # Estado del cerebro ("estación de carga")
 estado_cerebro = {
-    "modelo_activo": "llama-3.3-70b-versatile",
-    "tokens_restantes": "?",
-    "tokens_limite": "100000",
+    "modelo_activo": "PRINCIPAL Claude 4.6 Sonnet",
+    "tokens_restantes": "Depende de OpenRouter",
+    "tokens_limite": "Crédito API",
     "porcentaje": 100,
-    "recarga_en": "Disponible"
+    "recarga_en": "N/A"
 }
 
 # ============================================================
@@ -455,7 +467,7 @@ async def ejecutar_aviso_agenda(item_id: str, sleep_seconds: float, tipo: str, e
         if item_id in agenda_items:
             del agenda_items[item_id]
 
-async def procesar_accion_sistema(accion: str, parametro: str, contenido: str) -> str:
+async def procesar_accion_sistema(accion: str, parametro: str, contenido: str, confirmado: bool = False) -> str:
     global agenda_items
     
     if accion == "crear_temporizador":
@@ -525,7 +537,7 @@ async def procesar_accion_sistema(accion: str, parametro: str, contenido: str) -
             return f"No se encontró ningún elemento en la agenda con el ID o etiqueta '{target_id}'."
             
     else:
-        return controlar_sistema(accion, parametro, contenido)
+        return controlar_sistema(accion, parametro, contenido, confirmado)
 
 
 async def enviar_comando_widget(data: dict) -> str:
@@ -600,6 +612,43 @@ async def process_command(request: CommandRequest):
     command = request.command
     print(f"\n[CEREBRO] Evaluando: '{command}'")
     
+    # === DEMO DE CEREBROS ===
+    cmd_low = command.lower()
+    if ("mostrame tus 3 nuevos cerebros" in cmd_low or 
+        "muestra tus 3 nuevos cerebros" in cmd_low or 
+        "mostrame tus tres nuevos cerebros" in cmd_low or 
+        "muestra tus tres nuevos cerebros" in cmd_low):
+        def set_brain_state(name):
+            try:
+                import os
+                ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cerebro_actual.txt")
+                with open(ruta, "w", encoding="utf-8") as f:
+                    f.write(name)
+            except: pass
+            
+        async def demo_cerebros():
+            # Forzar el estado de la UI a pensando para que se vea el cambio de forma
+            with open("pensando.lock", "w") as f: f.write("1")
+            
+            set_brain_state("claude")
+            await asyncio.sleep(2)
+            set_brain_state("gemini")
+            await asyncio.sleep(2)
+            set_brain_state("llama")
+            await asyncio.sleep(2)
+            
+            # Restaurar
+            set_brain_state("claude")
+            try: os.remove("pensando.lock")
+            except: pass
+            
+            from tts import hablar
+            hablar("He terminado de mostrarte los tres cerebros, señor.")
+            
+        asyncio.create_task(demo_cerebros())
+        return {"status": "ok", "respuesta_texto": "Por supuesto. Observa mis formas mientras proceso tu solicitud...", "ya_hablado": False}
+    # ========================
+    
     # Añadir comando del usuario al historial
     agregar_al_historial("user", command)
         
@@ -644,57 +693,96 @@ async def process_command(request: CommandRequest):
         usando_reserva = False
         response = None
         
-        # Intentar con Gemini Flash (sin reintentos)
+        def set_brain_state(name):
+            try:
+                import os
+                ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cerebro_actual.txt")
+                with open(ruta, "w", encoding="utf-8") as f:
+                    f.write(name)
+            except:
+                pass
+                
+        # 1. Intentar con Claude 3.5 Sonnet (Cerebro Principal - Más Potente)
+        set_brain_state("claude")
+        estado_cerebro = {
+            "modelo_activo": "PRINCIPAL Claude 4.6 Sonnet",
+            "tokens_restantes": "Depende de OpenRouter",
+            "tokens_limite": "Crédito API",
+            "porcentaje": 100,
+            "recarga_en": "N/A"
+        }
         try:
-            response = await asyncio.to_thread(client_principal.chat.completions.create, 
-                model="gemini-2.0-flash",
-                messages=mensajes_grok,
-                tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, cerrar_widget_tool, memoria_tool, obs_tool, seguridad_tool, vigilante_pantalla_tool],
-                tool_choice="auto"
+            import litellm
+            tools_list = [spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, cerrar_widget_tool, memoria_tool, obs_tool, seguridad_tool, vigilante_pantalla_tool]
+            print("[PRINCIPAL Cerebro] Claude 4.6 Sonnet")
+            # OPTIMIZACIÓN DE TOKENS: Pasar solo el system prompt (0) y los últimos 3 mensajes
+            mensajes_claude = [mensajes_grok[0]] + mensajes_grok[-3:] if len(mensajes_grok) > 4 else mensajes_grok
+            response = await asyncio.to_thread(litellm.completion, 
+                model="anthropic/claude-sonnet-4-6",
+                api_key=os.getenv("ANTHROPIC_API_KEY"),
+                messages=mensajes_claude,
+                tools=tools_list,
+                tool_choice="auto",
+                temperature=0.1,
+                max_tokens=250
             )
-            estado_cerebro = {
-                "modelo_activo": "FLASH Gemini 2.0 Flash",
-                "tokens_restantes": "∞",
-                "tokens_limite": "1500 req/día",
-                "porcentaje": 100,
-                "recarga_en": "Disponible"
-            }
-            print("[FLASH Cerebro] Gemini 2.0 Flash")
-        except Exception as e:
-            print(f"[Error Gemini] {e}")
+        except Exception as e_claude:
+            print(f"[Error Claude] {e_claude}")
             response = None
-        
-        # Si Gemini falló, usar cerebro de reserva
+            
+        # 2. Si Claude falla, Reserva 1: Gemini 2.0 Flash
         if response is None:
-            print("[RESERVA Cerebro] Llama 3.3 70B (Reserva)")
             usando_reserva = True
+            set_brain_state("gemini")
             estado_cerebro = {
-                "modelo_activo": "RESERVA Llama 3.3 70B (Reserva)",
+                "modelo_activo": "RESERVA Gemini 2.0 Flash",
+                "tokens_restantes": "Ilimitados",
+                "tokens_limite": "Infinito",
+                "porcentaje": 80,
+                "recarga_en": "N/A"
+            }
+            print("[RESERVA Cerebro 1] Gemini 2.0 Flash")
+            try:
+                response = await asyncio.to_thread(client_principal.chat.completions.create, 
+                    model="gemini-2.0-flash",
+                    messages=mensajes_grok,
+                    tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, cerrar_widget_tool, memoria_tool, obs_tool, seguridad_tool, vigilante_pantalla_tool],
+                    tool_choice="auto"
+                )
+            except Exception as e_gemini:
+                print(f"[Error Gemini] {e_gemini}")
+                response = None
+                
+        # 3. Si Gemini también falla, Reserva 2: Llama 3.3 / 3.1
+        if response is None:
+            print("[RESERVA Cerebro 2] Llama 3.3 70B (Groq)")
+            estado_cerebro = {
+                "modelo_activo": "EMERGENCIA Llama 3.3 70B",
                 "tokens_restantes": "?",
                 "tokens_limite": "?",
-                "porcentaje": 50,
+                "porcentaje": 40,
                 "recarga_en": "Usando Groq"
             }
-            
             try:
+                set_brain_state("llama")
                 response = await asyncio.to_thread(client_reserva.chat.completions.create, 
                     model="llama-3.3-70b-versatile",
                     messages=mensajes_grok,
                     tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, cerrar_widget_tool, memoria_tool, obs_tool, seguridad_tool, vigilante_pantalla_tool],
                     tool_choice="auto"
                 )
-            except Exception as e:
-                print(f"[Error Sistema] Llama 3.3 falló: {e}")
-                print("[RESERVA Cerebro 2] Intentando con Llama 3.1 8B (Reserva 2)")
+            except Exception as e_llama:
+                print(f"[Error Llama 3.3] {e_llama}")
                 try:
+                    set_brain_state("llama")
                     response = await asyncio.to_thread(client_reserva.chat.completions.create, 
                         model="llama-3.1-8b-instant",
                         messages=mensajes_grok,
                         tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, cerrar_widget_tool, memoria_tool, obs_tool, seguridad_tool, vigilante_pantalla_tool],
                         tool_choice="auto"
                     )
-                except Exception as e2:
-                    print(f"[Error Sistema] Llama 3.1 8B también falló: {e2}")
+                except Exception as e_llama2:
+                    print(f"[Error Llama 3.1] {e_llama2}")
                     response = None
 
         if response is None:
@@ -761,15 +849,17 @@ async def process_command(request: CommandRequest):
                             accion = args.get("accion", "abrir_web")
                             parametro = args.get("parametro", "")
                             contenido = args.get("contenido", "")
-                            print(f"[Rescate] Ejecutando Sistema: '{accion}' - '{parametro}'")
-                            resultado = await procesar_accion_sistema(accion, parametro, contenido)
+                            confirmado = args.get("confirmado", False)
+                            print(f"[Rescate] Ejecutando Sistema: '{accion}' - '{parametro}' (conf={confirmado})")
+                            resultado = await procesar_accion_sistema(accion, parametro, contenido, confirmado)
                             respuestas_acumuladas.append(resultado)
                             
                         elif nombre_tool in ACCIONES_SISTEMA:
                             param = args.get("parametro", args.get("consulta", args.get("contenido", "")))
                             cont = args.get("contenido", "")
-                            print(f"[Rescate] Ejecutando Sistema (alucinado): '{nombre_tool}' - '{param}'")
-                            resultado = await procesar_accion_sistema(nombre_tool, param, cont)
+                            confirmado = args.get("confirmado", False)
+                            print(f"[Rescate] Ejecutando Sistema (alucinado): '{nombre_tool}' - '{param}' (conf={confirmado})")
+                            resultado = await procesar_accion_sistema(nombre_tool, param, cont, confirmado)
                             respuestas_acumuladas.append(resultado)
                             
                         elif nombre_tool == "ver_pantalla":
@@ -997,17 +1087,19 @@ async def process_command(request: CommandRequest):
                     accion = args.get("accion", "abrir_web")
                     parametro = args.get("parametro", "")
                     contenido = args.get("contenido", "")
-                    print(f"[Jarvis] Usando Sistema con acción: '{accion}', parametro: '{parametro}', contenido_len: {len(contenido)}")
-                    resultado = await procesar_accion_sistema(accion, parametro, contenido)
+                    confirmado = args.get("confirmado", False)
+                    print(f"[Jarvis] Usando Sistema con acción: '{accion}', parametro: '{parametro}', contenido_len: {len(contenido)}, confirmado: {confirmado}")
+                    resultado = await procesar_accion_sistema(accion, parametro, contenido, confirmado)
                     print(f"[Sistema] {resultado}")
                     respuestas_acumuladas.append(resultado)
                     mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
                     
-                elif nombre_tool in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor"]:
+                elif nombre_tool in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "eliminar_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor", "cerrar_jarvis"]:
                     param = args.get("parametro", args.get("consulta", args.get("contenido", "")))
                     cont = args.get("contenido", "")
-                    print(f"[Jarvis] Usando Sistema (alucinado): '{nombre_tool}' - '{param}'")
-                    resultado = await procesar_accion_sistema(nombre_tool, param, cont)
+                    confirmado = args.get("confirmado", False)
+                    print(f"[Jarvis] Usando Sistema (alucinado): '{nombre_tool}' - '{param}', confirmado: {confirmado}")
+                    resultado = await procesar_accion_sistema(nombre_tool, param, cont, confirmado)
                     print(f"[Sistema] {resultado}")
                     respuestas_acumuladas.append(resultado)
                     mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
@@ -1436,4 +1528,11 @@ def gestionar_vigilante_pantalla(accion: str) -> str:
 
 if __name__ == "__main__":
     print("Iniciando el servidor de FastAPI Jarvis...")
+    try:
+        import os
+        ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cerebro_actual.txt")
+        with open(ruta, "w", encoding="utf-8") as f:
+            f.write("claude")
+    except:
+        pass
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)

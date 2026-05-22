@@ -1,82 +1,82 @@
 [
   {
     "role": "user",
-    "content": "vino mi novia"
+    "content": "Y mostrame tus 3 nuevos cerebros"
+  },
+  {
+    "role": "assistant",
+    "content": "Lo siento señor, pero mis cerebros se colapsaron intentando procesar la información."
+  },
+  {
+    "role": "user",
+    "content": "Modo Sentinela"
+  },
+  {
+    "role": "assistant",
+    "content": "A la orden. Modo Centinela ACTIVADO: vigilancia en proceso."
+  },
+  {
+    "role": "user",
+    "content": "¿Estás vigilando?"
+  },
+  {
+    "role": "assistant",
+    "content": "Lo siento señor, todos mis cerebros de procesamiento han agotado sus cuotas de uso o fallado. Por favor revise las API keys o intente más tarde."
+  },
+  {
+    "role": "user",
+    "content": "Abrime Steam"
+  },
+  {
+    "role": "assistant",
+    "content": "Lo siento señor, todos mis cerebros de procesamiento han agotado sus cuotas de uso o fallado. Por favor revise las API keys o intente más tarde."
+  },
+  {
+    "role": "user",
+    "content": "Abrí Steam."
+  },
+  {
+    "role": "assistant",
+    "content": "Error: acción peligrosa con API keys caducadas."
   },
   {
     "role": "user",
     "content": "Thank you."
   },
   {
-    "role": "user",
-    "content": "Thank you."
+    "role": "assistant",
+    "content": "De nada, señor."
   },
   {
     "role": "user",
-    "content": "Apaga la PC."
+    "content": "Abrí Steam."
+  },
+  {
+    "role": "assistant",
+    "content": "A la orden. Programa 'Steam' iniciado."
   },
   {
     "role": "user",
-    "content": "Thank you."
+    "content": "سرحتم"
+  },
+  {
+    "role": "assistant",
+    "content": "Lo siento, pero no puedo comprender la solicitud."
   },
   {
     "role": "user",
-    "content": "Apaga la PC"
+    "content": "Cerra Steam."
+  },
+  {
+    "role": "assistant",
+    "content": "A la orden, señor. El programa Steam se ha cerrado correctamente."
   },
   {
     "role": "user",
-    "content": "¿Cómo está tu cerebro?"
+    "content": "Créame un temporizador de 10 segundos."
   },
   {
-    "role": "user",
-    "content": "Thank you."
-  },
-  {
-    "role": "user",
-    "content": "Thank you."
-  },
-  {
-    "role": "user",
-    "content": "Thank you."
-  },
-  {
-    "role": "user",
-    "content": "Thank you."
-  },
-  {
-    "role": "user",
-    "content": "Apaga la PC"
-  },
-  {
-    "role": "user",
-    "content": "Thank you."
-  },
-  {
-    "role": "user",
-    "content": "¿Me escuchas?"
-  },
-  {
-    "role": "user",
-    "content": "¿Me escuchas?"
-  },
-  {
-    "role": "user",
-    "content": "Thank you."
-  },
-  {
-    "role": "user",
-    "content": "Abrí Google Chrome."
-  },
-  {
-    "role": "user",
-    "content": "Thank you."
-  },
-  {
-    "role": "user",
-    "content": "Thank you."
-  },
-  {
-    "role": "user",
-    "content": "Thank you."
+    "role": "assistant",
+    "content": "A la orden. Widget creado exitosamente en pantalla."
   }
 ]

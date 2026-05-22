@@ -177,6 +177,19 @@ class JarvisWidget(QWidget):
         self.modo_centinela = os.path.exists("centinela.lock")
         self.modo_captura = os.path.exists("captura.lock")
         self.modo_grabando_obs = os.path.exists("obs_rec.lock") # Para el modo cámara verde
+        
+        if os.path.exists("pensando.lock"):
+            self.estado_actual = "pensando"
+        
+        try:
+            ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cerebro_actual.txt")
+            if os.path.exists(ruta):
+                with open(ruta, "r", encoding="utf-8") as f:
+                    self.cerebro_actual = f.read().strip()
+            else:
+                self.cerebro_actual = "gemini"
+        except:
+            self.cerebro_actual = "gemini"
                 
     def update_animation(self):
         self.time_counter += 0.1
@@ -242,11 +255,39 @@ class JarvisWidget(QWidget):
                 self.target_radii[i] += max(0, onda)
                 
         elif self.estado_actual == "pensando":
-            target_color = self.color_pensando
-            # Modo simbionte giratorio mental
-            for i in range(self.num_points):
-                onda = math.sin(self.time_counter * 5 + i * (math.pi / 8)) * 8
-                self.target_radii[i] += onda
+            cerebro = getattr(self, "cerebro_actual", "gemini")
+            
+            if cerebro == "claude":
+                target_color = QColor(230, 90, 20, 255) # Naranja Claude
+                # Logo de Anthropic: Estrella irregular / burst
+                for i in range(self.num_points):
+                    onda1 = math.sin(i * (11 * math.pi * 2 / self.num_points) + self.time_counter * 5) * 14
+                    onda2 = math.cos(i * (5 * math.pi * 2 / self.num_points) - self.time_counter * 3) * 6
+                    self.target_radii[i] += max(0, onda1 + onda2) # Puntas caóticas hacia afuera
+                    
+            elif cerebro == "llama":
+                target_color = QColor(20, 180, 50, 255) # Verde fijo como pidió el usuario
+                # Forma Meta (Infinito / Figura 8)
+                for i in range(self.num_points):
+                    theta = i * (math.pi * 2 / self.num_points)
+                    # abs(cos(theta)) genera un infinito horizontal al pinchar arriba y abajo
+                    pincho = abs(math.cos(theta))
+                    # Hacemos que el radio base se adapte a esta figura, más un ligero latido
+                    self.target_radii[i] = self.base_radius * (0.3 + 0.8 * pincho) + math.sin(self.time_counter * 3) * 3
+                    
+            else: # Gemini o por defecto
+                # Modo Gemini: Estrella brillante de 4 puntas y color RGB (Arcoíris)
+                h = int((self.time_counter * 60) % 360) # Cambia el Hue con el tiempo
+                target_color = QColor.fromHsv(h, 240, 255, 255)
+                for i in range(self.num_points):
+                    theta = i * (math.pi * 2 / self.num_points)
+                    # abs(cos(2*theta)) genera 4 puntas largas (0, 90, 180, 270)
+                    estrella = abs(math.cos(2 * theta))
+                    # Rotamos la estrella lentamente sumándole self.time_counter al ángulo
+                    theta_rot = theta + self.time_counter * 0.5
+                    estrella_rotada = abs(math.cos(2 * theta_rot))
+                    # Aplicar forma de estrella más un ligero destello
+                    self.target_radii[i] = self.base_radius * (0.3 + 0.7 * estrella_rotada) + (hash(str(self.time_counter+i))%5)
                 
         elif self.modo_centinela:
             target_color = self.color_centinela

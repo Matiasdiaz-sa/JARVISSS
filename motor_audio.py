@@ -33,7 +33,7 @@ client = OpenAI(
 # CONFIGURACIÓN DEL MICRÓFONO SIEMPRE ACTIVO
 # ============================================================
 RATE = 16000                    # Frecuencia de muestreo
-UMBRAL_VOZ = 120 # Umbral de energía para empezar/mantener grabación
+UMBRAL_VOZ = 100 # Umbral de energía para empezar/mantener grabación
 SILENCIO_PARA_CORTAR = 1.0      # Segundos de silencio para finalizar el comando
 DURACION_MINIMA = 0.5           # Segundos mínimos que debe durar un audio para procesarlo ruidos sueltos
 
@@ -161,8 +161,8 @@ def escuchar_continuo(callback_ui=None):
                     if callback_ui and jarvis_activo:
                         callback_ui("esperando", energia, conf)
                     
-                    # Umbral bajo (0.3) = máxima sensibilidad funcional, activa con decir "Jarvis" bajito
-                    if conf > 0.3:
+                    # Umbral subido (0.55) para evitar falsos positivos por ruido de fondo o televisión
+                    if conf > 0.55:
                         # ¡Wake word detectado!
                         if not jarvis_activo:
                             # Estaba hibernando, despertar sistemas
@@ -228,8 +228,9 @@ def escuchar_continuo(callback_ui=None):
                                 texto_lower = texto.lower().strip()
                                 
                                 # === COMANDOS DE APAGADO/HIBERNACIÓN ===
-                                palabras_apagar = ["apágate", "apagate", "apagar", "duérmete", "dormite", "modo sueño", "silencio"]
-                                if any(p in texto_lower for p in palabras_apagar):
+                                palabras_apagar = ["apágate", "apagate", "duérmete", "dormite", "modo sueño", "silencio", "apaga jarvis", "apágate jarvis", "desconéctate", "apagar jarvis"]
+                                if (any(p in texto_lower for p in palabras_apagar) or 
+                                    (texto_lower.startswith("apaga") and "pc" not in texto_lower and "computadora" not in texto_lower and "sistema" not in texto_lower and "monitor" not in texto_lower)):
                                     print("\n" + "═"*40)
                                     print(" 💤 APAGANDO SISTEMAS...")
                                     print("  ├ Desactivando escucha activa")
