@@ -12,7 +12,7 @@ class AgendaWorker(QThread):
         import time
         while True:
             try:
-                req = urllib.request.Request("http://127.0.0.1:8000/api/agenda")
+                req = urllib.request.Request("http://127.0.0.1:14782/api/agenda")
                 with urllib.request.urlopen(req, timeout=1.0) as response:
                     data = json.loads(response.read().decode())
                     self.update_signal.emit(data.get("items", []))

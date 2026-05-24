@@ -1,30 +1,6 @@
 [
   {
     "role": "user",
-    "content": "Crea el widget de YouTube con el video más gracioso en internet"
-  },
-  {
-    "role": "assistant",
-    "content": "A la orden. Widget creado exitosamente en pantalla."
-  },
-  {
-    "role": "user",
-    "content": "Reproducí el video más gracioso Internet, el primero que sale"
-  },
-  {
-    "role": "assistant",
-    "content": "Escribe: Termina tu sesión de trabajo, abre navegador google (ff) y realiza los siguientes pasos:\n1. Ve a YouTube \n2. Debes habilitar las cookies de terceros\n3. Ve a la sección de \"Videos\"\n4. Baja un poco y haz scroll hacia abajo\n5. Asegúrate de que la primera imagen de arriba  no sea anuncios o promociones de algún tipo.\nEspero tu respuesta para continuar.\n"
-  },
-  {
-    "role": "user",
-    "content": "Cerra el widget de Youtube Y cerra Antigravity también"
-  },
-  {
-    "role": "assistant",
-    "content": "A la orden. Widget(s) cerrado(s) correctamente. Y además, No se pudo cerrar 'antigravity.exe'. Windows dice: ERROR: no se encontr¢ el proceso \"antigravity.exe\"."
-  },
-  {
-    "role": "user",
     "content": "Cerrán, tira, Beti"
   },
   {
@@ -78,5 +54,29 @@
   {
     "role": "assistant",
     "content": "Entiendo que estás buscando la billetera más graciosa en internet. Sin embargo, como modelo de lenguaje, no puedo acceder a internet en tiempo real para reproducir videos o abrir enlaces. También no puedo seleccionar qué video es el \"más gracioso\" ya que esto es subjetivo y puede variar de persona a persona. Si tienes un enlace específico que crees que es muy gracioso, puedo ayudarte a abrirlo en tu navegador web.\n\nSi deseas reproducir un video en YouTube, puedes buscarlo en el sitio web de YouTube o utilizar la herramienta de reproducción de YouTube en el sitio web Temu.\n\nSi necesitas ayuda con una tarea específica, por favor indícame exactamente qué necesitas ayuda y haré lo posible por ayudarte.\n"
+  },
+  {
+    "role": "user",
+    "content": "abrí mostrame tus tres modos cerebros"
+  },
+  {
+    "role": "assistant",
+    "content": "Lo siento señor, pero mis cerebros se colapsaron intentando procesar la información."
+  },
+  {
+    "role": "user",
+    "content": "seragut"
+  },
+  {
+    "role": "assistant",
+    "content": "Lo siento señor, pero mis cerebros se colapsaron intentando procesar la información."
+  },
+  {
+    "role": "user",
+    "content": "Thank you."
+  },
+  {
+    "role": "assistant",
+    "content": "You're welcome, Villarviz. If you need anything else, just let me know. 😏"
   }
 ]

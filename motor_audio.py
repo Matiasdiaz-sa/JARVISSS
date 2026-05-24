@@ -33,7 +33,7 @@ client = OpenAI(
 # CONFIGURACIÓN DEL MICRÓFONO SIEMPRE ACTIVO
 # ============================================================
 RATE = 16000                    # Frecuencia de muestreo
-UMBRAL_VOZ = 80 # Umbral de energía para empezar/mantener grabación
+UMBRAL_VOZ = 40 # Umbral de energía para empezar/mantener grabación
 SILENCIO_PARA_CORTAR = 1.0      # Segundos de silencio para finalizar el comando
 DURACION_MINIMA = 0.5           # Segundos mínimos que debe durar un audio para procesarlo ruidos sueltos
 
@@ -313,7 +313,7 @@ def enviar_comando_a_cerebro(texto):
     """Envía el texto transcrito al servidor FastAPI local."""
     try:
         respuesta = httpx.post(
-            "http://127.0.0.1:8000/api/command", 
+            "http://127.0.0.1:14782/api/command", 
             json={"command": texto},
             timeout=30.0
         )

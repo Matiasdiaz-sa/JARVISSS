@@ -95,14 +95,17 @@ python main.py
 
 ---
 
-## 🧠 Arquitectura de "Cerebros"
+## 🧠 Arquitectura del Sistema (OpenClaw + Llama 3.3)
 
-Jarvis cuenta con un sistema de respaldo infalible para nunca dejar de funcionar:
-1. **Cerebro Principal:** Claude 4.6 Sonnet (vía Anthropic). Maneja la lógica pesada, la programación y las órdenes complejas. (Indicador visual: Estrella explosiva Naranja).
-2. **Respaldo 1:** Gemini 2.0 Flash. Se activa automáticamente si se acaban los tokens de Claude o hay un error de red. (Indicador visual: Estrella RGB).
-3. **Respaldo 2:** Llama 3.3 70B (vía Groq). Totalmente gratuito y de latencia ultrabaja, se activa si Gemini falla. (Indicador visual: Logo Verde de Meta).
+La arquitectura de Jarvis ha evolucionado para centrarse en la velocidad y la capacidad de orquestación autónoma:
 
-> **Comando de prueba:** Si escribes *"Jarvis mostrame tus 3 nuevos cerebros"*, forzarás una demostración visual en tu pantalla.
+1. **Orquestador Central (OpenClaw):** El cerebro ya no es un simple script, sino que está impulsado por **OpenClaw**, un framework de agentes que permite a la IA decidir qué herramientas usar, leer memoria a largo plazo y ejecutar acciones complejas en tu PC automáticamente.
+2. **Motor LLM Ultrarrápido:** El motor lógico principal utiliza **Llama 3.3 70B** a través de la API de Groq, asegurando respuestas y decisiones en fracciones de segundo.
+3. **Escucha Activa (OpenWakeWord):** Jarvis está siempre a la escucha con un modelo de IA entrenado localmente (`hey_jarvis.onnx`), que procesa audio sin conexión y detecta la palabra mágica sin consumir recursos de internet.
+4. **Respuestas Inmediatas:** Las ejecuciones de aplicaciones del sistema disparan el motor de voz (Edge TTS) en hilos de fondo paralelos. Cuando pides "Abre Spotify", Jarvis te habla en la misma milésima de segundo en la que se abre la aplicación, eliminando la latencia del LLM.
+5. **Interfaz Visual Dinámica:** Un widget transparente con motor de renderizado Qt PyQt6 que reacciona de forma fluida a la voz con animaciones "Venom RGB" cuando está pensando.
+
+> **Atajo Global:** Presiona **`Ctrl + Alt + J`** en cualquier momento para hablar con Jarvis sin decir la palabra mágica.
 
 ---
 

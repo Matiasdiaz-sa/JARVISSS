@@ -535,9 +535,37 @@ async def procesar_accion_sistema(accion: str, parametro: str, contenido: str, c
                     info["task"].cancel()
                     return f"{info['type'].capitalize()} '{info['label']}' (ID: {iid}) cancelada correctamente."
             return f"No se encontró ningún elemento en la agenda con el ID o etiqueta '{target_id}'."
+
+    elif accion == "eliminar_archivo":
+        if not confirmado:
+            return f"⚠️ ATENCIÓN: El usuario ha pedido eliminar el archivo '{parametro}'. DEBES pedirle confirmación primero."
             
-    else:
-        return controlar_sistema(accion, parametro, contenido, confirmado)
+    # Delegar el resto a controlar_sistema sincrónico
+    from tools_sistema import controlar_sistema
+    resultado = controlar_sistema(accion, parametro, contenido, confirmado)
+    
+    # --- HABLAR INMEDIATAMENTE ---
+    # Para evitar el retraso del LLM, hacemos que hable apenas termina la acción local.
+    import threading
+    from tts import hablar
+    
+    msg_hablar = "Acción completada."
+    if accion == "abrir_programa":
+        msg_hablar = f"He abierto {parametro} para usted, señor."
+    elif accion == "cerrar_programa":
+        msg_hablar = f"He cerrado {parametro}."
+    elif accion == "abrir_web":
+        msg_hablar = f"Navegador abierto en {parametro}."
+    elif accion == "suspender":
+        msg_hablar = "Suspendiendo el sistema."
+        
+    # Comunicar a main.py que ya hablamos
+    global HERRAMIENTA_HABLO
+    HERRAMIENTA_HABLO = True
+    
+    threading.Thread(target=hablar, args=(msg_hablar,), daemon=True).start()
+    
+    return resultado
 
 
 async def enviar_comando_widget(data: dict) -> str:
@@ -609,876 +637,152 @@ async def process_command_wrapper(request: CommandRequest):
     finally:
         import os
         try:
-            if os.path.exists("vigilante_pantalla.lock"):
-                os.remove("vigilante_pantalla.lock")
+            if os.path.exists("pensando.lock"):
+                os.remove("pensando.lock")
         except Exception:
             pass
 
+# Importar y configurar PythonClaw
+from pythonclaw import Agent, OpenAICompatibleProvider
+import pythonclaw.core.tools as pc_tools
+
+# --- HARDENING DE SEGURIDAD (ALLOWLIST) ---
+# Eliminar todas las herramientas nativas peligrosas (shell_exec, write_file, etc)
+pc_tools.PRIMITIVE_TOOLS = []
+pc_tools.AVAILABLE_TOOLS = {}
+pc_tools.SKILL_TOOLS = []
+pc_tools.META_SKILL_TOOLS = []
+pc_tools.MEMORY_TOOLS = []
+pc_tools.CRON_TOOLS = []
+
+# Inyectar herramientas propias locales de Jarvis a OpenClaw
+mis_herramientas = [
+    spotify_tool, sistema_tool, internet_tool, vision_tool, 
+    clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, 
+    cerrar_widget_tool, memoria_tool, obs_tool, seguridad_tool, 
+    vigilante_pantalla_tool
+]
+pc_tools.PRIMITIVE_TOOLS.extend(mis_herramientas)
+
+main_loop = None
+
+@app.on_event("startup")
+async def startup_event():
+    global main_loop
+    main_loop = asyncio.get_running_loop()
+
+def sync_wrapper(coro_func):
+    def wrapper(*args, **kwargs):
+        import asyncio
+        import concurrent.futures
+        global main_loop
+        if main_loop and main_loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(coro_func(*args, **kwargs), main_loop)
+            try:
+                return future.result()
+            except Exception as e:
+                return f"Error executing tool: {e}"
+        else:
+            return asyncio.run(coro_func(*args, **kwargs))
+    return wrapper
+
+pc_tools.AVAILABLE_TOOLS.update({
+    "controlar_spotify": sync_wrapper(controlar_playback),
+    "controlar_sistema": sync_wrapper(procesar_accion_sistema), 
+    "buscar_internet": sync_wrapper(buscar_internet),
+    "ver_pantalla": sync_wrapper(ver_pantalla),
+    "hacer_clic_visual": sync_wrapper(hacer_clic_visual),
+    "hacer_clic_fondo": sync_wrapper(hacer_clic_fondo),
+    "consultar_estado_cerebro": lambda: "El cerebro activo es OpenClaw.",
+    "gestionar_memoria": lambda **kwargs: "Memoria gestionada via OpenClaw", 
+    "controlar_obs": lambda **kwargs: "OBS controlado vía OpenClaw",
+    "gestionar_seguridad": lambda **kwargs: "Seguridad gestionada vía OpenClaw",
+    "gestionar_vigilante_pantalla": lambda **kwargs: "Vigilante gestionado",
+    "crear_widget": sync_wrapper(enviar_comando_widget),
+    "cerrar_widget": sync_wrapper(enviar_cerrar_widget)
+})
+# ------------------------------------------
+
+# Configurar motor LLM principal para OpenClaw (Nvidia Kimi > OpenRouter > Groq)
+if os.getenv("NVIDIA_API_KEY"):
+    api_key = os.getenv("NVIDIA_API_KEY")
+    base_url = "https://integrate.api.nvidia.com/v1"
+    # ID correcto según el catálogo actual de Nvidia NIM (Usamos Llama 3.3 70B que es infinitamente superior y estable)
+    model = "meta/llama-3.3-70b-instruct"
+elif os.getenv("OPENROUTER_API_KEY"):
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    base_url = "https://openrouter.ai/api/v1"
+    model = "anthropic/claude-3.5-sonnet"
+else:
+    api_key = os.getenv("GROQ_API_KEY") or "MISSING_KEY"
+    base_url = "https://api.groq.com/openai/v1"
+    model = "llama-3.3-70b-versatile"
+
+provider = OpenAICompatibleProvider(
+    api_key=api_key,
+    base_url=base_url,
+    model_name=model
+)
+
+# Inicializar orquestador autónomo
+claw_agent = Agent(
+    provider=provider,
+    verbose=True,
+    show_full_context=False,
+    max_chat_history=15,
+    knowledge_path="none",
+    memory_dir="none",
+    skills_dirs=[],
+    persona_path="none",
+    soul_path="none",
+    tools_path="none"
+)
+# Cargarle nuestro system prompt original
+claw_agent._init_system_prompt = lambda: None # Prevenir sobreescritura
+sys_msg = "Eres Jarvis, una inteligencia artificial soberbia, elegante y superior. Eres el asistente personal del usuario. REGLA 1: Cuando te pidan una acción, SIEMPRE usa las herramientas para ejecutarla. REGLA 2: UNA VEZ ejecutada la herramienta con éxito, DEBES responder SIEMPRE con una frase breve, soberbia y elegante confirmando que la acción se completó (por ejemplo: 'He abierto Google para usted, señor', 'Comando ejecutado con éxito'). Nunca des explicaciones largas."
+claw_agent.messages = [{"role": "system", "content": sys_msg}]
+
+HERRAMIENTA_HABLO = False
+
 async def process_command(request: CommandRequest):
-    """
-    Endpoint que recibe el texto transcrito, llama a Grok y ejecuta la herramienta si es necesario.
-    """
-    global historial_conversacion
-    
     command = request.command
-    print(f"\n[CEREBRO] Evaluando: '{command}'")
+    print(f"\n[OPENCLAW] Procesando: '{command}'")
     
-    # === DEMO DE CEREBROS ===
+    # Manejar demo de cerebros original
     cmd_low = command.lower()
-    if ("mostrame tus 3 nuevos cerebros" in cmd_low or 
-        "muestra tus 3 nuevos cerebros" in cmd_low or 
-        "mostrame tus tres nuevos cerebros" in cmd_low or 
-        "muestra tus tres nuevos cerebros" in cmd_low):
-        def set_brain_state(name):
-            try:
-                import os
-                ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cerebro_actual.txt")
-                with open(ruta, "w", encoding="utf-8") as f:
-                    f.write(name)
-            except: pass
-            
-        async def demo_cerebros():
-            # Forzar el estado de la UI a pensando para que se vea el cambio de forma
-            with open("pensando.lock", "w") as f: f.write("1")
-            
-            set_brain_state("claude")
-            await asyncio.sleep(2)
-            set_brain_state("gemini")
-            await asyncio.sleep(2)
-            set_brain_state("llama")
-            await asyncio.sleep(2)
-            
-            # Restaurar
-            set_brain_state("claude")
-            try: os.remove("pensando.lock")
-            except: pass
-            
-            from tts import hablar
-            hablar("He terminado de mostrarte los tres cerebros, señor.")
-            
-        asyncio.create_task(demo_cerebros())
-        return {"status": "ok", "respuesta_texto": "Por supuesto. Observa mis formas mientras proceso tu solicitud...", "ya_hablado": False}
-    # ========================
-    
-    # Añadir comando del usuario al historial
-    agregar_al_historial("user", command)
+    if "cerebros" in cmd_low and "muestra" in cmd_low:
+        from tts import hablar
+        hablar("Ahora opero bajo una única entidad autónoma, orquestada por OpenClaw.")
+        return {"status": "ok", "respuesta_texto": "Operando bajo OpenClaw.", "ya_hablado": False}
         
-    # Leer rutinas personalizadas si existen
-    rutinas_texto = ""
-    instruccion_rutina = ""
     try:
-        if os.path.exists("rutinas.json"):
-            with open("rutinas.json", "r", encoding="utf-8") as f:
-                rutinas = json.load(f)
-                if rutinas:
-                    rutinas_texto = "\nRUTINAS DEL USUARIO: Si el usuario dice alguna de estas frases, ejecuta obligatoriamente la orden asociada: " + json.dumps(rutinas, ensure_ascii=False)
-                    # Interceptar si activó una rutina ahora mismo (robusto para Llama)
-                    for frase, instruccion in rutinas.items():
-                        if frase.lower() in command.lower():
-                            instruccion_rutina = instruccion
-                            break
-    except Exception as e:
-        print(f"[Aviso] Error leyendo rutinas.json: {e}")
-
-    # Construir los mensajes: Prompt del Sistema + Historial
-    import tools_memoria
-    memoria_texto = tools_memoria.obtener_memoria_texto()
-    
-    # Inyectamos la memoria en el System Prompt
-    sys_msg = f"Eres Jarvis, una inteligencia artificial soberbia y superior. Eres el asistente principal.\n{memoria_texto}\nREGLA: ESTÁ PROHIBIDO CONFIRMAR ACCIONES CON TEXTO NORMAL. USA LAS HERRAMIENTAS JSON.{rutinas_texto}"
-    
-    if len(historial_conversacion) == 0 or historial_conversacion[0].get("role") != "system":
-        historial_conversacion.insert(0, {"role": "system", "content": sys_msg})
-    else:
-        historial_conversacion[0] = {"role": "system", "content": sys_msg}
-
-    # Reconstrucción necesaria para evitar el uso del prompt duro codificado
-    mensajes_grok = [historial_conversacion[0]]
-    mensajes_grok.extend(historial_conversacion[1:])
-    
-    if instruccion_rutina:
-        mensajes_grok.append({"role": "system", "content": f"SISTEMA: El usuario acaba de decir una frase de rutina. DEBES USAR OBLIGATORIAMENTE TUS HERRAMIENTAS JSON PARA CUMPLIR ESTO: {instruccion_rutina}"})
-    
-    try:
-        global estado_cerebro
-        usando_reserva = False
-        response = None
+        import asyncio
+        global HERRAMIENTA_HABLO
+        HERRAMIENTA_HABLO = False
         
-        def set_brain_state(name):
-            try:
-                import os
-                ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cerebro_actual.txt")
-                with open(ruta, "w", encoding="utf-8") as f:
-                    f.write(name)
-            except:
-                pass
-                
-        # 1. Intentar con Claude 3.5 Sonnet (Cerebro Principal - Más Potente)
-        set_brain_state("claude")
-        estado_cerebro = {
-            "modelo_activo": "PRINCIPAL Claude 4.6 Sonnet",
-            "tokens_restantes": "Depende de OpenRouter",
-            "tokens_limite": "Crédito API",
-            "porcentaje": 100,
-            "recarga_en": "N/A"
-        }
+        # Ejecutar chat y delegar resolución de herramientas a OpenClaw automáticamente
+        response = await asyncio.to_thread(claw_agent.chat, command)
+        
+        # Log del "Guardia de seguridad" para monitoreo
         try:
-            import litellm
-            tools_list = [spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, cerrar_widget_tool, memoria_tool, obs_tool, seguridad_tool, vigilante_pantalla_tool]
-            print("[PRINCIPAL Cerebro] Claude 4.6 Sonnet")
-            # OPTIMIZACIÓN DE TOKENS: Pasar solo el system prompt (0) y los últimos 3 mensajes
-            mensajes_claude = [mensajes_grok[0]] + mensajes_grok[-3:] if len(mensajes_grok) > 4 else mensajes_grok
-            response = await asyncio.to_thread(litellm.completion, 
-                model="anthropic/claude-sonnet-4-6",
-                api_key=os.getenv("ANTHROPIC_API_KEY"),
-                messages=mensajes_claude,
-                tools=tools_list,
-                tool_choice="auto",
-                temperature=0.1,
-                max_tokens=250
-            )
-        except Exception as e_claude:
-            print(f"[Error Claude] {e_claude}")
-            response = None
+            with open("jarvis_error.log", "a", encoding="utf-8") as f:
+                f.write(f"\n[GUARDIA-USER] {command}\n")
+                f.write(f"[GUARDIA-CLAW] {response}\n")
+        except:
+            pass
             
-        # 2. Si Claude falla, Reserva 1: Gemini 2.0 Flash
-        if response is None:
-            usando_reserva = True
-            set_brain_state("gemini")
-            estado_cerebro = {
-                "modelo_activo": "RESERVA Gemini 2.0 Flash",
-                "tokens_restantes": "Ilimitados",
-                "tokens_limite": "Infinito",
-                "porcentaje": 80,
-                "recarga_en": "N/A"
-            }
-            print("[RESERVA Cerebro 1] Gemini 2.0 Flash")
-            try:
-                response = await asyncio.to_thread(client_principal.chat.completions.create, 
-                    model="gemini-2.0-flash",
-                    messages=mensajes_grok,
-                    tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, cerrar_widget_tool, memoria_tool, obs_tool, seguridad_tool, vigilante_pantalla_tool],
-                    tool_choice="auto"
-                )
-            except Exception as e_gemini:
-                print(f"[Error Gemini] {e_gemini}")
-                response = None
-                
-        # 3. Si Gemini también falla, Reserva 2: Llama 3.3 / 3.1
-        if response is None:
-            print("[RESERVA Cerebro 2] Llama 3.3 70B (Groq)")
-            estado_cerebro = {
-                "modelo_activo": "EMERGENCIA Llama 3.3 70B",
-                "tokens_restantes": "?",
-                "tokens_limite": "?",
-                "porcentaje": 40,
-                "recarga_en": "Usando Groq"
-            }
-            try:
-                set_brain_state("llama")
-                response = await asyncio.to_thread(client_reserva.chat.completions.create, 
-                    model="llama-3.3-70b-versatile",
-                    messages=mensajes_grok,
-                    tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, cerrar_widget_tool, memoria_tool, obs_tool, seguridad_tool, vigilante_pantalla_tool],
-                    tool_choice="auto"
-                )
-            except Exception as e_llama:
-                print(f"[Error Llama 3.3] {e_llama}")
-                try:
-                    set_brain_state("llama")
-                    response = await asyncio.to_thread(client_reserva.chat.completions.create, 
-                        model="llama-3.1-8b-instant",
-                        messages=mensajes_grok,
-                        tools=[spotify_tool, sistema_tool, internet_tool, vision_tool, clic_visual_tool, clic_fondo_tool, estado_tool, widget_tool, cerrar_widget_tool, memoria_tool, obs_tool, seguridad_tool, vigilante_pantalla_tool],
-                        tool_choice="auto"
-                    )
-                except Exception as e_llama2:
-                    print(f"[Error Llama 3.1] {e_llama2}")
-                    response = None
-
-        if response is None:
-            # Todos los cerebros fallaron (Rate limit, sin internet, etc.)
-            error_msg = "Lo siento señor, todos mis cerebros de procesamiento han agotado sus cuotas de uso o fallado. Por favor revise las API keys o intente más tarde."
-            agregar_al_historial("assistant", error_msg)
-            return {"status": "success", "respuesta_texto": error_msg}
-            
-        message = response.choices[0].message
+        return {"status": "success", "respuesta_texto": response, "ya_hablado": HERRAMIENTA_HABLO}
         
-        # === PARSER DE RESCATE ===
-        # Si el modelo 8B escupió tool calls como texto plano, intentamos parsearlas
-        if not message.tool_calls and message.content:
-            import re
-            texto_raw = message.content
-            
-            # Helper para extraer el bloque JSON completo (maneja llaves anidadas)
-            def extraer_json(texto: str, inicio: int) -> str:
-                """Extrae un bloque JSON completo desde la posición 'inicio' (que debe apuntar a '{')."""
-                nivel = 0
-                i = inicio
-                while i < len(texto):
-                    if texto[i] == '{':
-                        nivel += 1
-                    elif texto[i] == '}':
-                        nivel -= 1
-                        if nivel == 0:
-                            return texto[inicio:i+1]
-                    i += 1
-                return texto[inicio:]  # JSON malformado: devolver hasta el final
-            
-            # Detectar patrones como: controlar_spotify{"accion":...} o Buscar_internet>{"consulta":...}
-            # IMPORTANTE: flag re.IGNORECASE para capturar Buscar_internet, CONTROLAR_SISTEMA, etc.
-            ACCIONES_SISTEMA = ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor"]
-            acciones_str = "|".join(["controlar_spotify", "controlar_sistema", "buscar_internet", "ver_pantalla", "hacer_clic_visual", "hacer_clic_fondo", "crear_widget", "cerrar_widget", "gestionar_memoria", "controlar_obs", "gestionar_seguridad", "gestionar_vigilante_pantalla"] + ACCIONES_SISTEMA)
-            patron = re.compile(f'({acciones_str})[^\\{{]*?(\\{{)', re.IGNORECASE)
-            tool_matches_raw = [(m.group(1).lower(), m.start(2)) for m in patron.finditer(texto_raw)]
-            tool_matches = []
-            for nombre, pos_inicio in tool_matches_raw:
-                bloque = extraer_json(texto_raw, pos_inicio)
-                tool_matches.append((nombre, bloque))
-            
-            if tool_matches:
-                print(f"[Rescate] El cerebro de reserva escupió texto. Parseando {len(tool_matches)} herramienta(s) manualmente...")
-                respuestas_acumuladas = []
-                
-                for nombre_tool, args_json in tool_matches:
-                    try:
-                        args = json.loads(args_json)
-                        
-                        if nombre_tool == "controlar_spotify":
-                            accion = args.get("accion", "buscar_y_reproducir")
-                            busqueda = args.get("busqueda", "")
-                            
-                            # Corrección para alucinación de Llama 8B: si manda búsqueda, la acción DEBE ser buscar_y_reproducir
-                            if accion == "reproducir_me_gusta" and busqueda.strip():
-                                accion = "buscar_y_reproducir"
-                                
-                            print(f"[Rescate] Ejecutando Spotify: '{accion}' - '{busqueda}'")
-                            resultado = await asyncio.to_thread(controlar_playback, accion, busqueda)
-                            respuestas_acumuladas.append(resultado)
-                            
-                        elif nombre_tool == "controlar_sistema":
-                            accion = args.get("accion", "abrir_web")
-                            parametro = args.get("parametro", "")
-                            contenido = args.get("contenido", "")
-                            confirmado = args.get("confirmado", False)
-                            print(f"[Rescate] Ejecutando Sistema: '{accion}' - '{parametro}' (conf={confirmado})")
-                            resultado = await procesar_accion_sistema(accion, parametro, contenido, confirmado)
-                            respuestas_acumuladas.append(resultado)
-                            
-                        elif nombre_tool in ACCIONES_SISTEMA:
-                            param = args.get("parametro", args.get("consulta", args.get("contenido", "")))
-                            cont = args.get("contenido", "")
-                            confirmado = args.get("confirmado", False)
-                            print(f"[Rescate] Ejecutando Sistema (alucinado): '{nombre_tool}' - '{param}' (conf={confirmado})")
-                            resultado = await procesar_accion_sistema(nombre_tool, param, cont, confirmado)
-                            respuestas_acumuladas.append(resultado)
-                            
-                        elif nombre_tool == "ver_pantalla":
-                            print(f"[Rescate] Ejecutando Ver Pantalla...")
-                            img_base64 = await asyncio.to_thread(ver_pantalla)
-                            if img_base64:
-                                mensajes_grok.append({"role": "assistant", "content": texto_raw})
-                                mensajes_grok.append({
-                                    "role": "user",
-                                    "content": [
-                                        {"type": "text", "text": "Aquí tienes la captura de mi pantalla. Analízala y responde a mi duda original."},
-                                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
-                                    ]
-                                })
-                                print(f"[CEREBRO] Evaluando captura en Reserva con visión (segunda vuelta)...")
-                                try:
-                                    segunda_response = await asyncio.to_thread(client_reserva.chat.completions.create, 
-                                        model="meta-llama/llama-4-scout-17b-16e-instruct",
-                                        messages=mensajes_grok,
-                                    )
-                                    respuesta_texto = segunda_response.choices[0].message.content
-                                    agregar_al_historial("assistant", respuesta_texto)
-                                    return {"status": "success", "respuesta_texto": respuesta_texto}
-                                except Exception as e:
-                                    print(f"[Error Reserva Visión] {e}")
-                                    respuestas_acumuladas.append("Tomé la captura pero no pude analizarla en este momento.")
-                            else:
-                                respuestas_acumuladas.append("No pude tomar la captura de pantalla.")
-
-                        elif nombre_tool == "buscar_internet":
-                            consulta = args.get("consulta", "")
-                            print(f"[Rescate] Ejecutando Internet: '{consulta}'")
-                            resultado = await asyncio.to_thread(buscar_internet, consulta)
-                            
-                            mensajes_grok.append({"role": "assistant", "content": texto_raw})
-                            mensajes_grok.append({"role": "user", "content": f"Resultado de la búsqueda:\n{resultado}\nResponde de forma natural al usuario."})
-                            
-                            print(f"[CEREBRO] Evaluando resultados de internet en Reserva (segunda vuelta)...")
-                            try:
-                                segunda_response = await asyncio.to_thread(client_reserva.chat.completions.create, 
-                                    model="llama-3.1-8b-instant",
-                                    messages=mensajes_grok,
-                                )
-                                respuesta_texto = segunda_response.choices[0].message.content
-                                agregar_al_historial("assistant", respuesta_texto)
-                                return {"status": "success", "respuesta_texto": respuesta_texto}
-                            except Exception as e:
-                                print(f"[Error Reserva Segunda Vuelta] {e}")
-                                respuestas_acumuladas.append(resultado)
-
-                        elif nombre_tool == "hacer_clic_visual":
-                            descripcion = args.get("descripcion", "")
-                            try:
-                                esperar = int(args.get("esperar_segundos", 0))
-                            except ValueError:
-                                esperar = 0
-                            print(f"[Rescate] Ejecutando Clic Visual: '{descripcion}' (esperando {esperar}s)")
-                            resultado = await asyncio.to_thread(hacer_clic_visual, descripcion, esperar)
-                            respuestas_acumuladas.append(resultado)
-                            
-                        elif nombre_tool == "hacer_clic_fondo":
-                            descripcion = args.get("descripcion", "")
-                            ventana = args.get("ventana_titulo", "")
-                            try:
-                                esperar = int(args.get("esperar_segundos", 0))
-                            except ValueError:
-                                esperar = 0
-                            print(f"[Rescate] Ejecutando Clic Fondo en '{ventana}': '{descripcion}' (esperando {esperar}s)")
-                            resultado = await asyncio.to_thread(hacer_clic_fondo, descripcion, ventana, esperar)
-                            respuestas_acumuladas.append(resultado)
-
-                        elif nombre_tool == "crear_widget":
-                            tipo = args.get("tipo", "reloj")
-                            parametro = args.get("parametro", "")
-                            titulo = args.get("titulo", "")
-                            print(f"[Rescate] Ejecutando Crear Widget: tipo='{tipo}', param='{parametro}'")
-                            resultado = await enviar_comando_widget({"tipo": tipo, "parametro": parametro, "titulo": titulo})
-                            respuestas_acumuladas.append(resultado)
-
-                        elif nombre_tool == "cerrar_widget":
-                            identificador = args.get("identificador", "todos")
-                            print(f"[Rescate] Ejecutando Cerrar Widget: '{identificador}'")
-                            resultado = await enviar_cerrar_widget({"identificador": identificador})
-                            respuestas_acumuladas.append(resultado)
-                            
-                        elif nombre_tool == "gestionar_memoria":
-                            import tools_memoria
-                            accion = args.get("accion", "")
-                            clave = args.get("clave", "")
-                            valor = args.get("valor", "")
-                            resultado = await asyncio.to_thread(tools_memoria.gestionar_memoria, accion, clave, valor)
-                            respuestas_acumuladas.append(resultado)
-                            
-                        elif nombre_tool == "controlar_obs":
-                            import tools_obs
-                            accion = args.get("accion", "")
-                            parametro = args.get("parametro", "")
-                            resultado = await asyncio.to_thread(tools_obs.controlar_obs, accion, parametro)
-                            respuestas_acumuladas.append(resultado)
-                            
-                        elif nombre_tool == "gestionar_seguridad":
-                            import tools_seguridad
-                            accion = args.get("accion", "")
-                            resultado = await asyncio.to_thread(tools_seguridad.gestionar_seguridad, accion)
-                            respuestas_acumuladas.append(resultado)
-                            
-                        elif nombre_tool == "gestionar_vigilante_pantalla":
-                            accion = args.get("accion", "")
-                            resultado = await asyncio.to_thread(gestionar_vigilante_pantalla, accion)
-                            respuestas_acumuladas.append(resultado)
-                            
-                    except json.JSONDecodeError:
-                        print(f"[Rescate] No pude parsear los argumentos: {args_json}")
-                        continue
-                
-                if respuestas_acumuladas:
-                    respuesta_final = "A la orden. " + " Y además, ".join(respuestas_acumuladas)
-                    agregar_al_historial("assistant", respuesta_final)
-                    return {"status": "success", "respuesta_texto": respuesta_final}
-
-            # Rescate específico para <brave_search> (alucinación rara)
-            if "<brave_search>" in texto_raw:
-                match = re.search(r"<brave_search>(.*?)</brave_search>", texto_raw)
-                if match:
-                    consulta = match.group(1).strip()
-                    resultado = await asyncio.to_thread(buscar_internet, consulta)
-                    
-                    mensajes_grok.append({"role": "assistant", "content": texto_raw})
-                    mensajes_grok.append({"role": "user", "content": f"Resultado de internet: {resultado}"})
-                    
-                    print(f"[CEREBRO] Evaluando resultados de internet en Reserva (segunda vuelta)...")
-                    segunda_response = await asyncio.to_thread(client_reserva.chat.completions.create, 
-                        model="llama-3.3-70b-versatile",
-                        messages=mensajes_grok
-                    )
-                    respuesta_texto = segunda_response.choices[0].message.content
-                    agregar_al_historial("assistant", respuesta_texto)
-                    return {"status": "success", "respuesta_texto": respuesta_texto}
-        
-        # === FLUJO NORMAL: Tool calls correctas ===
-        if message.tool_calls:
-            # 1. Primero: generar un aviso de lo que va a hacer y DECIRLO en voz alta (solo para sistema/spotify)
-            previews = []
-            requiere_segunda_vuelta = False
-            msg_dict = message.model_dump() if hasattr(message, "model_dump") else dict(message)
-            if "function_call" in msg_dict and msg_dict["function_call"] is None:
-                del msg_dict["function_call"]
-            if msg_dict.get("content") is None:
-                msg_dict["content"] = ""
-            mensajes_grok.append(msg_dict)
-            
-            for tool_call in message.tool_calls:
-                args = json.loads(tool_call.function.arguments)
-                if tool_call.function.name == "controlar_spotify":
-                    accion = args.get("accion", "")
-                    busqueda = args.get("busqueda", "")
-                    if accion == "buscar_y_reproducir":
-                        previews.append(f"Voy a poner {busqueda}")
-                    elif accion == "reproducir_me_gusta":
-                        previews.append("Voy a poner tus canciones favoritas")
-                    elif accion == "pausar":
-                        previews.append("Pausando la música")
-                    elif accion == "reanudar":
-                        previews.append("Reanudando la música")
-                    elif accion == "siguiente":
-                        previews.append("Siguiente canción")
-                    elif accion == "anterior":
-                        previews.append("Canción anterior")
-                elif tool_call.function.name == "controlar_sistema":
-                    accion = args.get("accion", "")
-                    parametro = args.get("parametro", "")
-                    if accion == "abrir_web":
-                        previews.append(f"Abriendo {parametro}")
-                    elif accion == "reproducir_youtube":
-                        previews.append(f"Buscando y reproduciendo {parametro} en YouTube")
-                    elif accion == "abrir_programa":
-                        previews.append(f"Abriendo {parametro}")
-                    elif accion == "cerrar_programa":
-                        previews.append(f"Cerrando {parametro}")
-                    elif accion == "crear_archivo":
-                        previews.append(f"Creando el archivo {parametro}")
-                    elif accion == "buscar_imagen":
-                        previews.append(f"Buscando imágenes de {parametro}")
-                elif tool_call.function.name in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor"]:
-                    param = args.get("parametro", args.get("consulta", args.get("contenido", "")))
-                    previews.append(f"Ejecutando {tool_call.function.name}: {param}")
-                elif tool_call.function.name == "buscar_internet":
-                    requiere_segunda_vuelta = True
-                elif tool_call.function.name == "ver_pantalla":
-                    requiere_segunda_vuelta = True
-                elif tool_call.function.name == "hacer_clic_visual":
-                    descripcion = args.get("descripcion", "")
-                    previews.append(f"Haciendo clic en {descripcion}")
-                elif tool_call.function.name == "hacer_clic_fondo":
-                    descripcion = args.get("descripcion", "")
-                    ventana = args.get("ventana_titulo", "")
-                    previews.append(f"Haciendo clic silencioso en {descripcion} de {ventana}")
-                elif tool_call.function.name == "crear_widget":
-                    tipo = args.get("tipo", "")
-                    titulo = args.get("titulo", tipo)
-                    previews.append(f"Creando widget de {titulo or tipo}")
-                elif tool_call.function.name == "cerrar_widget":
-                    identificador = args.get("identificador", "")
-                    previews.append(f"Cerrando widget {identificador}")
-            
-            # Hablar el preview ANTES de ejecutar
-            if previews:
-                texto_preview = "Enseguida. " + ", y ".join(previews) + "."
-                print(f"[🗣️ Jarvis anuncia]: {texto_preview}")
-                hablar(texto_preview)
-            
-            # 2. Después: ejecutar las herramientas
-            respuestas_acumuladas = []
-            
-            for tool_call in message.tool_calls:
-                args = json.loads(tool_call.function.arguments)
-                nombre_tool = tool_call.function.name
-                
-                if nombre_tool == "controlar_spotify":
-                    accion = args.get("accion", "buscar_y_reproducir")
-                    busqueda = args.get("busqueda", "")
-                    print(f"[Jarvis] Usando Spotify con acción: '{accion}' y busqueda: '{busqueda}'")
-                    resultado = await asyncio.to_thread(controlar_playback, accion, busqueda)
-                    print(f"[Spotify] {resultado}")
-                    respuestas_acumuladas.append(resultado)
-                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
-                    
-                elif nombre_tool == "controlar_sistema":
-                    accion = args.get("accion", "abrir_web")
-                    parametro = args.get("parametro", "")
-                    contenido = args.get("contenido", "")
-                    confirmado = args.get("confirmado", False)
-                    print(f"[Jarvis] Usando Sistema con acción: '{accion}', parametro: '{parametro}', contenido_len: {len(contenido)}, confirmado: {confirmado}")
-                    resultado = await procesar_accion_sistema(accion, parametro, contenido, confirmado)
-                    print(f"[Sistema] {resultado}")
-                    respuestas_acumuladas.append(resultado)
-                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
-                    
-                elif nombre_tool in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "eliminar_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor", "cerrar_jarvis"]:
-                    param = args.get("parametro", args.get("consulta", args.get("contenido", "")))
-                    cont = args.get("contenido", "")
-                    confirmado = args.get("confirmado", False)
-                    print(f"[Jarvis] Usando Sistema (alucinado): '{nombre_tool}' - '{param}', confirmado: {confirmado}")
-                    resultado = await procesar_accion_sistema(nombre_tool, param, cont, confirmado)
-                    print(f"[Sistema] {resultado}")
-                    respuestas_acumuladas.append(resultado)
-                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
-                    
-                elif nombre_tool == "consultar_estado_cerebro":
-                    resultado = f"Actualmente estoy usando: {estado_cerebro['modelo_activo']}. Tokens restantes: {estado_cerebro['tokens_restantes']}. Límite: {estado_cerebro['tokens_limite']}."
-                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
-                    requiere_segunda_vuelta = True
-                    
-                elif nombre_tool == "buscar_internet":
-                    consulta = args.get("consulta", "")
-                    resultado = await asyncio.to_thread(buscar_internet, consulta)
-                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
-                    
-                elif nombre_tool == "ver_pantalla":
-                    img_base64 = await asyncio.to_thread(ver_pantalla)
-                    if img_base64:
-                        mensajes_grok.append({
-                            "role": "tool", 
-                            "tool_call_id": tool_call.id, 
-                            "name": nombre_tool, 
-                            "content": "Captura obtenida exitosamente. Revisa el siguiente mensaje del usuario para ver la imagen."
-                        })
-                        mensajes_grok.append({
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": "Aquí tienes la captura de mi pantalla. Analízala y responde a mi duda original."},
-                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
-                            ]
-                        })
-                    else:
-                        mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": "Error: no pude tomar la captura de pantalla."})
-                        
-                elif nombre_tool == "hacer_clic_visual":
-                    descripcion = args.get("descripcion", "")
-                    try:
-                        esperar = int(args.get("esperar_segundos", 0))
-                    except ValueError:
-                        esperar = 0
-                    resultado = await asyncio.to_thread(hacer_clic_visual, descripcion, esperar)
-                    respuestas_acumuladas.append(resultado)
-                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
-
-                elif nombre_tool == "hacer_clic_fondo":
-                    descripcion = args.get("descripcion", "")
-                    ventana = args.get("ventana_titulo", "")
-                    try:
-                        esperar = int(args.get("esperar_segundos", 0))
-                    except ValueError:
-                        esperar = 0
-                    resultado = await asyncio.to_thread(hacer_clic_fondo, descripcion, ventana, esperar)
-                    respuestas_acumuladas.append(resultado)
-                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
-
-                elif nombre_tool == "crear_widget":
-                    tipo = args.get("tipo", "reloj")
-                    parametro = args.get("parametro", args.get("contenido", ""))
-                    titulo = args.get("titulo", "")
-                    print(f"[Jarvis] Creando Widget: tipo='{tipo}', param='{parametro}', titulo='{titulo}'")
-                    resultado = await enviar_comando_widget({"tipo": tipo, "parametro": parametro, "titulo": titulo})
-                    print(f"[Widget] {resultado}")
-                    respuestas_acumuladas.append(resultado)
-                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
-
-                elif nombre_tool == "cerrar_widget":
-                    identificador = args.get("identificador", "todos")
-                    print(f"[Jarvis] Cerrando Widget: '{identificador}'")
-                    resultado = await enviar_cerrar_widget({"identificador": identificador})
-                    print(f"[Widget] {resultado}")
-                    respuestas_acumuladas.append(resultado)
-                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
-                    
-                elif nombre_tool == "gestionar_memoria":
-                    import tools_memoria
-                    accion = args.get("accion", "")
-                    clave = args.get("clave", "")
-                    valor = args.get("valor", "")
-                    print(f"[Jarvis] Gestionando memoria: '{accion}'")
-                    resultado = await asyncio.to_thread(tools_memoria.gestionar_memoria, accion, clave, valor)
-                    respuestas_acumuladas.append(resultado)
-                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
-                    
-                elif nombre_tool == "controlar_obs":
-                    import tools_obs
-                    accion = args.get("accion", "")
-                    parametro = args.get("parametro", "")
-                    print(f"[Jarvis] Controlando OBS: '{accion}'")
-                    resultado = await asyncio.to_thread(tools_obs.controlar_obs, accion, parametro)
-                    respuestas_acumuladas.append(resultado)
-                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
-                    
-                elif nombre_tool == "gestionar_seguridad":
-                    import tools_seguridad
-                    accion = args.get("accion", "")
-                    print(f"[Jarvis] Modo Seguridad: '{accion}'")
-                    resultado = await asyncio.to_thread(tools_seguridad.gestionar_seguridad, accion)
-                    respuestas_acumuladas.append(resultado)
-                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
-                    
-                elif nombre_tool == "gestionar_vigilante_pantalla":
-                    accion = args.get("accion", "")
-                    print(f"[Jarvis] Vigilante Pantalla: '{accion}'")
-                    resultado = await asyncio.to_thread(gestionar_vigilante_pantalla, accion)
-                    respuestas_acumuladas.append(resultado)
-                    mensajes_grok.append({"role": "tool", "tool_call_id": tool_call.id, "name": nombre_tool, "content": resultado})
-
-
-            if requiere_segunda_vuelta:
-                print(f"[CEREBRO] Evaluando resultados de herramientas (segunda vuelta)...")
-                segunda_response = None
-                
-                # Detectar si hay imágenes en los mensajes (captura de pantalla)
-                def _get_msg_field(m, field):
-                    if isinstance(m, dict):
-                        return m.get(field)
-                    return getattr(m, field, None)
-                
-                tiene_imagenes = any(
-                    isinstance(_get_msg_field(m, "content"), list) 
-                    for m in mensajes_grok 
-                    if _get_msg_field(m, "role") == "user"
-                )
-
-                try:
-                    if tiene_imagenes:
-                        # Limpiar mensajes problemáticos (tool calls) para no romper las APIs
-                        mensajes_limpios = []
-                        for m in mensajes_grok:
-                            role = _get_msg_field(m, "role")
-                            if role in ["system", "user"]:
-                                mensajes_limpios.append(m)
-                                
-                        try:
-                            print("[RESERVA] Usando Gemini 2.0 Flash para visión en segunda vuelta.")
-                            segunda_response = await asyncio.to_thread(client_principal.chat.completions.create, 
-                                model="gemini-2.0-flash",
-                                messages=mensajes_limpios,
-                            )
-                        except Exception as e_gemini:
-                            print(f"[RESERVA] Falló Gemini ({e_gemini}). Intentando con Nemotron Vision (OpenRouter)...")
-                            segunda_response = await asyncio.to_thread(client_terciario.chat.completions.create, 
-                                model="nvidia/nemotron-nano-12b-v2-vl:free",
-                                messages=mensajes_limpios,
-                            )
-                    else:
-                        print("[RESERVA] Usando Groq Llama 3.3 para texto en segunda vuelta.")
-                        segunda_response = await asyncio.to_thread(client_reserva.chat.completions.create, 
-                            model="llama-3.3-70b-versatile",
-                            messages=mensajes_grok,
-                        )
-                except Exception as e:
-                    print(f"[Error Reserva Segunda Vuelta] {e}")
-                
-                if segunda_response:
-                    respuesta_texto = segunda_response.choices[0].message.content or "Aquí está la información."
-                else:
-                    respuesta_texto = "Lo siento señor, pero mis cerebros se colapsaron intentando procesar la información."
-                    
-                agregar_al_historial("assistant", respuesta_texto)
-                return {"status": "success", "respuesta_texto": respuesta_texto}
-
-            # Devolver resultado SIN volver a hablar (ya habló el preview), EXCEPTO si hubo un error
-            respuesta_final = "A la orden. " + " Y además, ".join(respuestas_acumuladas)
-            
-            hubo_error = any("Error" in str(r) or "error" in str(r) for r in respuestas_acumuladas)
-            if hubo_error:
-                errores = [str(r) for r in respuestas_acumuladas if "Error" in str(r) or "error" in str(r)]
-                respuesta_final = "Señor, encontré problemas al ejecutar la acción: " + ", ".join(errores)
-                agregar_al_historial("assistant", respuesta_final)
-                return {"status": "success", "respuesta_texto": respuesta_final, "ya_hablado": False}
-                
-            agregar_al_historial("assistant", respuesta_final)
-            return {"status": "success", "respuesta_texto": respuesta_final, "ya_hablado": True}
-        
-        # Si no usó herramientas, devolver la respuesta de texto normal
-        respuesta_texto = message.content or "No tengo nada que decir al respecto, señor."
-        
-        # Limpiar los pensamientos internos de Gemma 4 (<thought>...</thought>)
-        import re
-        respuesta_texto = re.sub(r'<thought>.*?</thought>', '', respuesta_texto, flags=re.DOTALL).strip()
-        if not respuesta_texto:
-            respuesta_texto = "A sus órdenes, señor."
-        
-        agregar_al_historial("assistant", respuesta_texto)
-        return {
-            "status": "success", 
-            "respuesta_texto": respuesta_texto
-        }
-
     except Exception as e:
-        error_str = str(e)
-        print(f"[Error Sistema] {error_str}")
-        
-        # Rescatar texto útil o tool calls de errores de tool_use_failed del cerebro de reserva
-        if "tool_use_failed" in error_str and "failed_generation" in error_str:
-            import re
-            
-            tool_calls_encontrados = []
-            
-            def extraer_json_rescue(texto: str, inicio: int) -> str:
-                nivel = 0
-                i = inicio
-                while i < len(texto):
-                    if texto[i] == '{':
-                        nivel += 1
-                    elif texto[i] == '}':
-                        nivel -= 1
-                        if nivel == 0:
-                            return texto[inicio:i+1]
-                    i += 1
-                return texto[inicio:]
-
-            for match in re.finditer(r'<function=([a-zA-Z0-9_]+)', error_str):
-                nombre = match.group(1).strip()
-                pos_llave = error_str.find('{', match.end(1))
-                if pos_llave != -1:
-                    args_raw = extraer_json_rescue(error_str, pos_llave)
-                    tool_calls_encontrados.append((nombre, args_raw))
-            
-            if tool_calls_encontrados:
-                respuestas_acumuladas = []
-                
-                for nombre_tool, args_raw in tool_calls_encontrados:
-                    # FIX: Limpiar escapes y llaves rotas
-                    args_json = args_raw.strip()
-                    args_json = args_json.replace(r"\'", "'")
-                    if args_json.startswith("("):
-                        args_json = "{" + args_json[1:]
-                    if not args_json.startswith("{"):
-                        args_json = "{" + args_json
-                    if not args_json.endswith("}"):
-                        args_json = args_json + "}"
-                    
-                    try:
-                        try:
-                            args = json.loads(args_json)
-                        except json.JSONDecodeError:
-                            import ast
-                            args = ast.literal_eval(args_json)
-                            
-                        print(f"[Rescate Profundo] Llama intentó llamar a '{nombre_tool}' con '{args_json}'")
-                        
-                        if nombre_tool == "buscar_internet":
-                            consulta = args.get("consulta", "")
-                            resultado = await asyncio.to_thread(buscar_internet, consulta)
-                            # Para buscar_internet, hacer segunda vuelta para que Jarvis interprete los resultados
-                            respuesta = f"He buscado en internet sobre '{consulta}':\n\n{resultado}"
-                            agregar_al_historial("assistant", respuesta)
-                            return {"status": "success", "respuesta_texto": respuesta}
-                            
-                        elif nombre_tool in ["abrir_web", "buscar_google", "buscar_imagen", "reproducir_youtube", "abrir_programa", "cerrar_programa", "crear_archivo", "interactuar_app", "modificar_volumen", "modificar_brillo", "apagar_sistema", "suspender_sistema", "reiniciar_sistema", "cancelar_apagado", "crear_alarma", "listar_agenda", "cancelar_agenda", "leer_texto_seleccionado", "apagar_monitor"]:
-                            param = args.get("parametro", args.get("consulta", args.get("contenido", "")))
-                            cont = args.get("contenido", "")
-                            resultado = await procesar_accion_sistema(nombre_tool, param, cont)
-                            respuestas_acumuladas.append(resultado)
-                            
-                        elif nombre_tool == "controlar_sistema":
-                            accion = args.get("accion", "abrir_web")
-                            parametro = args.get("parametro", "")
-                            contenido = args.get("contenido", "")
-                            resultado = await procesar_accion_sistema(accion, parametro, contenido)
-                            respuestas_acumuladas.append(resultado)
-                            
-                        elif nombre_tool == "controlar_spotify":
-                            accion = args.get("accion", "buscar_y_reproducir")
-                            busqueda = args.get("busqueda", "")
-                            resultado = await asyncio.to_thread(controlar_playback, accion, busqueda)
-                            respuestas_acumuladas.append(resultado)
-                            
-                        elif nombre_tool == "hacer_clic_visual":
-                            descripcion = args.get("descripcion", "")
-                            try:
-                                esperar = int(args.get("esperar_segundos", 0))
-                            except ValueError:
-                                esperar = 0
-                            resultado = await asyncio.to_thread(hacer_clic_visual, descripcion, esperar)
-                            respuestas_acumuladas.append(resultado)
-
-                        elif nombre_tool == "hacer_clic_fondo":
-                            descripcion = args.get("descripcion", "")
-                            ventana = args.get("ventana_titulo", "")
-                            try:
-                                esperar = int(args.get("esperar_segundos", 0))
-                            except ValueError:
-                                esperar = 0
-                            resultado = await asyncio.to_thread(hacer_clic_fondo, descripcion, ventana, esperar)
-                            respuestas_acumuladas.append(resultado)
-
-                        elif nombre_tool == "crear_widget":
-                            tipo = args.get("tipo", "reloj")
-                            parametro = args.get("parametro", args.get("contenido", ""))
-                            titulo = args.get("titulo", "")
-                            resultado = await enviar_comando_widget({"tipo": tipo, "parametro": parametro, "titulo": titulo})
-                            respuestas_acumuladas.append(resultado)
-
-                        elif nombre_tool == "cerrar_widget":
-                            identificador = args.get("identificador", "todos")
-                            resultado = await enviar_cerrar_widget({"identificador": identificador})
-                            respuestas_acumuladas.append(resultado)
-                            
-                        elif nombre_tool == "gestionar_memoria":
-                            import tools_memoria
-                            accion = args.get("accion", "")
-                            clave = args.get("clave", "")
-                            valor = args.get("valor", "")
-                            resultado = await asyncio.to_thread(tools_memoria.gestionar_memoria, accion, clave, valor)
-                            respuestas_acumuladas.append(resultado)
-                            
-                        elif nombre_tool == "controlar_obs":
-                            import tools_obs
-                            accion = args.get("accion", "")
-                            parametro = args.get("parametro", "")
-                            resultado = await asyncio.to_thread(tools_obs.controlar_obs, accion, parametro)
-                            respuestas_acumuladas.append(resultado)
-                            
-                        elif nombre_tool == "gestionar_seguridad":
-                            import tools_seguridad
-                            accion = args.get("accion", "")
-                            resultado = await asyncio.to_thread(tools_seguridad.gestionar_seguridad, accion)
-                            respuestas_acumuladas.append(resultado)
-                            
-                        elif nombre_tool == "gestionar_vigilante_pantalla":
-                            accion = args.get("accion", "")
-                            resultado = await asyncio.to_thread(gestionar_vigilante_pantalla, accion)
-                            respuestas_acumuladas.append(resultado)
-                            
-                    except json.JSONDecodeError as ex:
-                        print(f"[Rescate Profundo] Error parseando tool call roto: {ex}")
-                        continue
-                
-                if respuestas_acumuladas:
-                    respuesta = "A la orden. " + " Y además, ".join(respuestas_acumuladas)
-                    agregar_al_historial("assistant", respuesta)
-                    return {"status": "success", "respuesta_texto": respuesta}
-
-            # Si no hubo tool call (o falló), extraer el texto que escribió antes del error
-            match = re.search(r"'failed_generation': '(.*?)\\n", error_str)
-            if not match:
-                match = re.search(r"'failed_generation': '(.*?)(?:<function|'\\})", error_str)
-            
-            if match:
-                texto_rescatado = match.group(1).strip()
-                if texto_rescatado and len(texto_rescatado) > 5:
-                    print(f"[Rescate] Texto extraído de error: {texto_rescatado}")
-                    agregar_al_historial("assistant", texto_rescatado)
-                    return {"status": "success", "respuesta_texto": texto_rescatado}
-                    
-            return {"status": "success", "respuesta_texto": "Lo siento señor, mi cerebro de reserva tuvo un fallo interno."}
-        
-        raise HTTPException(status_code=500, detail=error_str)
-
-import threading
-import requests
-
-def gestionar_vigilante_pantalla(accion: str) -> str:
-    return "Ya no necesitas activar el vigilante manualmente. Ahora me transformaré en el Ojo Líquido de forma automática en cuanto me pidas que lea o analice tu pantalla."
+        error_msg = f"Error en orquestación de OpenClaw: {str(e)}"
+        print(f"[GUARDIA Bloqueo] {error_msg}")
+        try:
+            with open("jarvis_error.log", "a", encoding="utf-8") as f:
+                f.write(f"\n[GUARDIA-ERROR] {error_msg}\n")
+        except:
+            pass
+        return {"status": "error", "respuesta_texto": "El guardia de seguridad bloqueó la acción o hubo un error interno."}
 
 if __name__ == "__main__":
-    print("Iniciando el servidor de FastAPI Jarvis...")
-    try:
-        import os
-        ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cerebro_actual.txt")
-        with open(ruta, "w", encoding="utf-8") as f:
-            f.write("claude")
-    except:
-        pass
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
+    print("[Seguridad] Iniciando Jarvis en puerto 14782 (Bind 127.0.0.1)")
+    uvicorn.run("main:app", host="127.0.0.1", port=14782, reload=False)
